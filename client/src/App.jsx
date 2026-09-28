@@ -1,51 +1,99 @@
-import './App.css';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import DashboardLayout from './layouts/DashboardLayout';
+import Dashboard from './pages/Dashboard/Dashboard';
+import PlaceholderPage from './pages/Placeholder/PlaceholderPage';
 
-function App() {
+/**
+ * Main Application Router & Shell Component.
+ * Establishes client-side routing for the Retail Inventory Management System (P_022).
+ */
+export default function App() {
   return (
-    <div className="app-container">
-      <main className="hero-section">
-        <div className="header-badge">
-          <span className="status-dot"></span>
-          <span>Project ID: P_022 • Agile Capstone</span>
-        </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<DashboardLayout />}>
+          {/* Default Route redirects to /dashboard */}
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
 
-        <h1 className="hero-title">Retail Inventory Management System</h1>
+          {/* Catalog Modules */}
+          <Route 
+            path="products" 
+            element={<PlaceholderPage title="Product Catalog" moduleCode="MOD-CATALOG-01" />} 
+          />
 
-        <p className="hero-subtitle">
-          An industry-oriented full-stack web application designed for scalable
-          management of products, warehouses, inventory, procurement, and fulfillment.
-        </p>
+          {/* Inventory & Warehouse Modules */}
+          <Route 
+            path="inventory" 
+            element={<PlaceholderPage title="Stock Inventory" moduleCode="MOD-INVENTORY-02" />} 
+          />
+          <Route 
+            path="warehouses" 
+            element={<PlaceholderPage title="Warehouses & Hubs" moduleCode="MOD-WAREHOUSE-03" />} 
+          />
 
-        <div className="meta-grid">
-          <div className="meta-card">
-            <div className="card-tag">Frontend</div>
-            <div className="card-title">React + Vite</div>
-            <div className="card-desc">Modern component-driven UI with clean modular folder architecture.</div>
-          </div>
+          {/* Procurement Modules */}
+          <Route 
+            path="suppliers" 
+            element={<PlaceholderPage title="Suppliers Directory" moduleCode="MOD-SUPPLIER-04" />} 
+          />
+          <Route 
+            path="purchase-orders" 
+            element={<PlaceholderPage title="Purchase Orders" moduleCode="MOD-PROCUREMENT-05" />} 
+          />
+          <Route 
+            path="procurement" 
+            element={<PlaceholderPage title="Procurement Hub" moduleCode="MOD-PROCUREMENT-05" />} 
+          />
 
-          <div className="meta-card">
-            <div className="card-tag">Backend</div>
-            <div className="card-title">Node.js + Express</div>
-            <div className="card-desc">Clean layered MVC architecture: Routes → Controllers → Services → Models.</div>
-          </div>
+          {/* Sales & Fulfillment Modules */}
+          <Route 
+            path="orders" 
+            element={<PlaceholderPage title="Sales Orders" moduleCode="MOD-SALES-06" />} 
+          />
+          <Route 
+            path="fulfillment" 
+            element={<PlaceholderPage title="Order Fulfillment" moduleCode="MOD-FULFILLMENT-07" />} 
+          />
 
-          <div className="meta-card">
-            <div className="card-tag">Database</div>
-            <div className="card-title">MySQL</div>
-            <div className="card-desc">Relational data store (to be configured in upcoming sprint).</div>
-          </div>
-        </div>
+          {/* Analytics Modules */}
+          <Route 
+            path="reports" 
+            element={<PlaceholderPage title="Analytics & Reports" moduleCode="MOD-REPORTS-08" />} 
+          />
 
-        <div className="status-banner">
-          <strong>Initial Setup Active:</strong> Foundation phase established. Business modules, authentication, and database schemas will be developed incrementally.
-        </div>
-      </main>
+          {/* Administration Modules */}
+          <Route 
+            path="users" 
+            element={<PlaceholderPage title="User Accounts" moduleCode="MOD-ADMIN-USERS" />} 
+          />
+          <Route 
+            path="roles" 
+            element={<PlaceholderPage title="Roles & Permissions" moduleCode="MOD-ADMIN-ROLES" />} 
+          />
+          <Route 
+            path="audit-logs" 
+            element={<PlaceholderPage title="Audit Logs" moduleCode="MOD-ADMIN-AUDIT" />} 
+          />
+          <Route 
+            path="administration" 
+            element={<PlaceholderPage title="Administration Console" moduleCode="MOD-ADMIN-MAIN" />} 
+          />
 
-      <footer className="footer">
-        Retail Inventory Management System • Project ID: P_022 • Agile Capstone
-      </footer>
-    </div>
+          {/* System Settings */}
+          <Route 
+            path="settings" 
+            element={<PlaceholderPage title="System Settings" moduleCode="MOD-SYSTEM-CONFIG" />} 
+          />
+
+          {/* Fallback 404 handler */}
+          <Route 
+            path="*" 
+            element={<PlaceholderPage title="Page Not Found" moduleCode="ERR-404" />} 
+          />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }
-
-export default App;
