@@ -41,11 +41,15 @@ const INDIAN_STATES = [
  * @param {object} initialData - Pre-populated warehouse data (for Edit mode)
  * @param {boolean} isEditMode - True if editing an existing warehouse
  * @param {function} onSubmit - Submit handler passing validated form data
+ * @param {boolean} isSubmitting - Whether form submission is in progress
+ * @param {string} apiError - Server-side error message if submission failed
  */
 export default function WarehouseForm({
   initialData = {},
   isEditMode = false,
   onSubmit,
+  isSubmitting = false,
+  apiError = null,
 }) {
   const navigate = useNavigate();
 
@@ -66,6 +70,7 @@ export default function WarehouseForm({
   });
 
   const [errors, setErrors] = useState({});
+  const [localSubmitting, setLocalSubmitting] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -147,16 +152,24 @@ export default function WarehouseForm({
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) {
       window.scrollTo({ top: 100, behavior: 'smooth' });
       return;
     }
 
-    onSubmit(formData);
+    setLocalSubmitting(true);
+    try {
+      await onSubmit(formData);
+    } catch {
+      // Handled by parent or toast
+    } finally {
+      setLocalSubmitting(false);
+    }
   };
 
+  const isBusy = isSubmitting || localSubmitting;
   const returnPath = isEditMode ? `/warehouses/${initialData.id}` : '/warehouses';
 
   return (
@@ -183,15 +196,35 @@ export default function WarehouseForm({
             type="button"
             className="btn-sm btn-secondary"
             onClick={() => navigate(returnPath)}
+            disabled={isBusy}
           >
             Cancel
           </button>
-          <button type="submit" className="btn-sm btn-primary">
+          <button type="submit" className="btn-sm btn-primary" disabled={isBusy}>
             <CheckCircle2 size={15} />
-            <span>{isEditMode ? 'Save Changes' : 'Create Warehouse'}</span>
+            <span>{isBusy ? 'Saving...' : (isEditMode ? 'Save Changes' : 'Create Warehouse')}</span>
           </button>
         </div>
       </div>
+
+      {/* Global Server Error Banner */}
+      {apiError && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          background: '#fef2f2',
+          border: '1px solid #fecaca',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          color: '#991b1b',
+          fontSize: '13.5px',
+          marginBottom: '16px',
+        }}>
+          <AlertCircle size={16} />
+          <span>{apiError}</span>
+        </div>
+      )}
 
       {/* SECTION A — BASIC INFORMATION */}
       <div className="card form-section-card">
@@ -219,6 +252,7 @@ export default function WarehouseForm({
               placeholder="e.g. Delhi Central Hub"
               value={formData.name}
               onChange={handleChange}
+              disabled={isBusy}
             />
             {errors.name && (
               <span className="form-error-msg">
@@ -241,6 +275,7 @@ export default function WarehouseForm({
               value={formData.code}
               onChange={handleChange}
               readOnly={isEditMode}
+              disabled={isBusy}
             />
             {isEditMode ? (
               <span className="form-helper-text">
@@ -269,9 +304,11 @@ export default function WarehouseForm({
               className="form-select"
               value={formData.status}
               onChange={handleChange}
+              disabled={isBusy}
             >
               <option value="ACTIVE">ACTIVE (Operational)</option>
               <option value="INACTIVE">INACTIVE (Temporarily Closed / Maintenance)</option>
+              <option value="UNDER_MAINTENANCE">UNDER_MAINTENANCE</option>
             </select>
           </div>
         </div>
@@ -303,6 +340,7 @@ export default function WarehouseForm({
               placeholder="e.g. Plot 42, Phase III, Okhla Industrial Area"
               value={formData.address}
               onChange={handleChange}
+              disabled={isBusy}
             />
             {errors.address && (
               <span className="form-error-msg">
@@ -324,6 +362,7 @@ export default function WarehouseForm({
               placeholder="e.g. New Delhi, Mumbai, Bengaluru"
               value={formData.city}
               onChange={handleChange}
+              disabled={isBusy}
             />
             {errors.city && (
               <span className="form-error-msg">
@@ -343,6 +382,7 @@ export default function WarehouseForm({
               className={`form-select ${errors.state ? 'error' : ''}`}
               value={formData.state}
               onChange={handleChange}
+              disabled={isBusy}
             >
               <option value="">Select State</option>
               {INDIAN_STATES.map((st) => (
@@ -372,6 +412,7 @@ export default function WarehouseForm({
               placeholder="e.g. 110020"
               value={formData.pincode}
               onChange={handleChange}
+              disabled={isBusy}
             />
             {errors.pincode && (
               <span className="form-error-msg">
@@ -408,6 +449,7 @@ export default function WarehouseForm({
               placeholder="e.g. Amit Sharma"
               value={formData.managerName}
               onChange={handleChange}
+              disabled={isBusy}
             />
             {errors.managerName && (
               <span className="form-error-msg">
@@ -429,6 +471,7 @@ export default function WarehouseForm({
               placeholder="e.g. amit.sharma@retailims.in"
               value={formData.managerEmail}
               onChange={handleChange}
+              disabled={isBusy}
             />
             {errors.managerEmail && (
               <span className="form-error-msg">
@@ -450,6 +493,7 @@ export default function WarehouseForm({
               placeholder="e.g. +91 98112 34567"
               value={formData.managerPhone}
               onChange={handleChange}
+              disabled={isBusy}
             />
             {errors.managerPhone && (
               <span className="form-error-msg">
@@ -487,6 +531,7 @@ export default function WarehouseForm({
               placeholder="e.g. 50000"
               value={formData.capacity}
               onChange={handleChange}
+              disabled={isBusy}
             />
             {errors.capacity && (
               <span className="form-error-msg">
@@ -509,6 +554,7 @@ export default function WarehouseForm({
               placeholder="0"
               value={formData.currentStock}
               onChange={handleChange}
+              disabled={isBusy}
             />
             {errors.currentStock && (
               <span className="form-error-msg">
@@ -532,6 +578,7 @@ export default function WarehouseForm({
                 placeholder="e.g. 35"
                 value={formData.staffCount}
                 onChange={handleChange}
+                disabled={isBusy}
               />
             </div>
             {errors.staffCount && (
@@ -549,12 +596,13 @@ export default function WarehouseForm({
           type="button"
           className="btn-sm btn-secondary"
           onClick={() => navigate(returnPath)}
+          disabled={isBusy}
         >
           Cancel
         </button>
-        <button type="submit" className="btn-sm btn-primary">
+        <button type="submit" className="btn-sm btn-primary" disabled={isBusy}>
           <CheckCircle2 size={16} />
-          <span>{isEditMode ? 'Update Warehouse' : 'Create Warehouse'}</span>
+          <span>{isBusy ? 'Saving...' : (isEditMode ? 'Update Warehouse' : 'Create Warehouse')}</span>
         </button>
       </div>
     </form>

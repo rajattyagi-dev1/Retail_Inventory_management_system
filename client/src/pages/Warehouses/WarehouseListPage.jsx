@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Plus,
@@ -8,29 +8,87 @@ import {
   Warehouse,
   MapPin,
   User,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { useWarehouses } from '../../hooks/useWarehouses';
 import DataTable from '../../components/common/DataTable';
 import StatusBadge from '../../components/common/StatusBadge';
 import Pagination from '../../components/common/Pagination';
+import LoadingState from '../../components/common/LoadingState';
 import WarehouseFilters from '../../components/warehouses/WarehouseFilters';
 
 const ITEMS_PER_PAGE = 8;
 
 /**
  * Warehouse List Page (/warehouses).
- * Displays searchable, filterable, and paginated warehouse locations with live utilization metrics.
+ * Displays searchable, filterable, and server-paginated warehouse locations directly from MySQL.
  */
 export default function WarehouseListPage() {
   const navigate = useNavigate();
-  const { warehouses, toggleWarehouseStatus } = useWarehouses();
+  const { 
+    warehouses, 
+    loading, 
+    error, 
+    pagination, 
+    fetchWarehouses, 
+    toggleWarehouseStatus 
+  } = useWarehouses();
 
   // Filters and sorting state
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [stateFilter, setStateFilter] = useState('ALL');
   const [sortBy, setSortBy] = useState('newest');
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Debounce search query to avoid excessive API requests
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Request warehouses from server when pagination or filters change
+  useEffect(() => {
+    let sortField = 'createdAt';
+    let sortDirection = 'desc';
+
+    switch (sortBy) {
+      case 'name-asc':
+        sortField = 'name';
+        sortDirection = 'asc';
+        break;
+      case 'name-desc':
+        sortField = 'name';
+        sortDirection = 'desc';
+        break;
+      case 'capacity-high':
+        sortField = 'capacity';
+        sortDirection = 'desc';
+        break;
+      case 'capacity-low':
+        sortField = 'capacity';
+        sortDirection = 'asc';
+        break;
+      case 'newest':
+      default:
+        sortField = 'createdAt';
+        sortDirection = 'desc';
+        break;
+    }
+
+    fetchWarehouses({
+      page: currentPage,
+      limit: ITEMS_PER_PAGE,
+      search: debouncedSearch.trim() || undefined,
+      status: statusFilter !== 'ALL' ? statusFilter : undefined,
+      sortBy: sortField,
+      sortOrder: sortDirection,
+    });
+  }, [currentPage, debouncedSearch, statusFilter, sortBy, fetchWarehouses]);
 
   // Derive unique states for filter dropdown
   const availableStates = useMemo(() => {
@@ -38,73 +96,15 @@ export default function WarehouseListPage() {
     return Array.from(states).sort();
   }, [warehouses]);
 
-  // Client-side filtering logic
-  const filteredWarehouses = useMemo(() => {
-    return warehouses.filter((wh) => {
-      // 1. Full text search across name, code, city, and manager
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchesName = wh.name?.toLowerCase().includes(q);
-        const matchesCode = wh.code?.toLowerCase().includes(q);
-        const matchesCity = wh.city?.toLowerCase().includes(q);
-        const matchesManager = wh.managerName?.toLowerCase().includes(q);
-        if (!matchesName && !matchesCode && !matchesCity && !matchesManager) {
-          return false;
-        }
-      }
-
-      // 2. Status filter
-      if (statusFilter !== 'ALL' && wh.status !== statusFilter) {
-        return false;
-      }
-
-      // 3. State filter
-      if (stateFilter !== 'ALL' && wh.state !== stateFilter) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [warehouses, searchQuery, statusFilter, stateFilter]);
-
-  // Client-side sorting logic
-  const sortedWarehouses = useMemo(() => {
-    const list = [...filteredProductsList(filteredWarehouses)];
-    switch (sortBy) {
-      case 'name-asc':
-        return list.sort((a, b) => a.name.localeCompare(b.name));
-      case 'name-desc':
-        return list.sort((a, b) => b.name.localeCompare(a.name));
-      case 'capacity-high':
-        return list.sort((a, b) => b.capacity - a.capacity);
-      case 'capacity-low':
-        return list.sort((a, b) => a.capacity - b.capacity);
-      case 'stock-high':
-        return list.sort((a, b) => b.currentStock - a.currentStock);
-      case 'stock-low':
-        return list.sort((a, b) => a.currentStock - b.currentStock);
-      case 'utilization-high':
-        return list.sort(
-          (a, b) => (b.currentStock / b.capacity) - (a.currentStock / a.capacity)
-        );
-      case 'newest':
-      default:
-        return list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-    }
-  }, [filteredWarehouses, sortBy]);
-
-  function filteredProductsList(items) {
-    return items;
-  }
-
-  // Pagination slice
-  const paginatedWarehouses = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return sortedWarehouses.slice(start, start + ITEMS_PER_PAGE);
-  }, [sortedWarehouses, currentPage]);
+  // Optional state filter on currently retrieved page
+  const displayWarehouses = useMemo(() => {
+    if (stateFilter === 'ALL') return warehouses;
+    return warehouses.filter((wh) => wh.state === stateFilter);
+  }, [warehouses, stateFilter]);
 
   const handleClearFilters = () => {
     setSearchQuery('');
+    setDebouncedSearch('');
     setStatusFilter('ALL');
     setStateFilter('ALL');
     setSortBy('newest');
@@ -128,6 +128,7 @@ export default function WarehouseListPage() {
 
   const handleSortChange = (val) => {
     setSortBy(val);
+    setCurrentPage(1);
   };
 
   // Table columns definition
@@ -168,10 +169,10 @@ export default function WarehouseListPage() {
         <div>
           <span style={{ fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 4 }}>
             <MapPin size={12} style={{ color: '#64748b' }} />
-            {row.city}
+            {row.city || '—'}
           </span>
           <span style={{ fontSize: '11.5px', color: '#64748b', display: 'block' }}>
-            {row.state} - {row.pincode}
+            {row.state ? `${row.state} - ${row.pincode || ''}` : row.pincode || '—'}
           </span>
         </div>
       ),
@@ -183,10 +184,10 @@ export default function WarehouseListPage() {
         <div>
           <span style={{ fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', gap: 4 }}>
             <User size={12} style={{ color: '#64748b' }} />
-            {row.managerName}
+            {row.managerName || (row.manager ? row.manager.name : '—')}
           </span>
           <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block' }}>
-            {row.managerPhone}
+            {row.managerPhone || row.managerEmail || (row.manager ? row.manager.email : '—')}
           </span>
         </div>
       ),
@@ -249,7 +250,7 @@ export default function WarehouseListPage() {
                 {pct}%
               </span>
               <span style={{ fontSize: '10.5px', color: '#94a3b8' }}>
-                {(row.capacity - row.currentStock).toLocaleString('en-IN')} free
+                {Math.max(0, row.capacity - row.currentStock).toLocaleString('en-IN')} free
               </span>
             </div>
             <div className="progress-track" style={{ height: '6px', margin: 0 }}>
@@ -317,7 +318,7 @@ export default function WarehouseListPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h2 className="module-title">Warehouses</h2>
             <span className="nav-badge-pill" style={{ background: '#eff6ff', color: '#2563eb' }}>
-              {warehouses.length} Locations
+              {pagination.total} Locations
             </span>
           </div>
           <p className="module-description">
@@ -333,6 +334,36 @@ export default function WarehouseListPage() {
         </div>
       </div>
 
+      {/* Error Banner */}
+      {error && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: '#fef2f2',
+          border: '1px solid #fecaca',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          color: '#991b1b',
+          fontSize: '13.5px',
+          marginBottom: '16px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertCircle size={16} />
+            <span>{error}</span>
+          </div>
+          <button
+            type="button"
+            className="btn-sm btn-secondary"
+            style={{ padding: '4px 10px', fontSize: '12px' }}
+            onClick={() => fetchWarehouses({ page: currentPage, limit: ITEMS_PER_PAGE })}
+          >
+            <RefreshCw size={13} style={{ marginRight: 4 }} />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
       {/* Filter and Search Toolbar */}
       <WarehouseFilters
         searchQuery={searchQuery}
@@ -345,27 +376,35 @@ export default function WarehouseListPage() {
         onSortChange={handleSortChange}
         onClearFilters={handleClearFilters}
         availableStates={availableStates}
-        totalFilteredCount={sortedWarehouses.length}
-        totalCount={warehouses.length}
+        totalFilteredCount={pagination.total}
+        totalCount={pagination.total}
       />
 
       {/* Warehouses Data Table */}
       <div className="card" style={{ overflow: 'hidden' }}>
-        <DataTable
-          columns={columns}
-          data={paginatedWarehouses}
-          keyExtractor={(item) => item.id}
-          emptyTitle="No warehouses match your search"
-          emptyMessage="Try adjusting your search terms or clearing state and status filters."
-        />
+        {loading && warehouses.length === 0 ? (
+          <div style={{ padding: '40px 0' }}>
+            <LoadingState message="Loading warehouses from database..." />
+          </div>
+        ) : (
+          <>
+            <DataTable
+              columns={columns}
+              data={displayWarehouses}
+              keyExtractor={(item) => item.id}
+              emptyTitle="No warehouses match your search"
+              emptyMessage="Try adjusting your search terms or clearing state and status filters."
+            />
 
-        {/* Client-side Pagination */}
-        <Pagination
-          currentPage={currentPage}
-          totalItems={sortedWarehouses.length}
-          pageSize={ITEMS_PER_PAGE}
-          onPageChange={(page) => setCurrentPage(page)}
-        />
+            {/* Server-side Pagination */}
+            <Pagination
+              currentPage={currentPage}
+              totalItems={pagination.total}
+              pageSize={ITEMS_PER_PAGE}
+              onPageChange={(page) => setCurrentPage(page)}
+            />
+          </>
+        )}
       </div>
     </div>
   );

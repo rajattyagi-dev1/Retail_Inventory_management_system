@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -17,26 +17,71 @@ import {
 import { useWarehouses } from '../../hooks/useWarehouses';
 import StatusBadge from '../../components/common/StatusBadge';
 import EmptyState from '../../components/common/EmptyState';
+import LoadingState from '../../components/common/LoadingState';
 import DataTable from '../../components/common/DataTable';
 import SectionHeader from '../../components/common/SectionHeader';
 import { MOCK_WAREHOUSE_INVENTORY_ITEMS } from '../../utils/warehouseMockData';
 
 /**
  * Warehouse Details Page (/warehouses/:id).
- * Displays facility telemetry, capacity utilization, manager directory, and mock inventory allocation.
+ * Displays facility telemetry, capacity utilization, manager directory, and inventory distribution directly from MySQL API.
  */
 export default function WarehouseDetailsPage() {
   const { id } = useParams();
-  const { getWarehouseById, toggleWarehouseStatus } = useWarehouses();
+  const { fetchWarehouse, toggleWarehouseStatus } = useWarehouses();
 
-  const warehouse = getWarehouseById(id);
+  const [warehouse, setWarehouse] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  if (!warehouse) {
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchWarehouse(id)
+      .then((data) => {
+        if (isMounted) {
+          setWarehouse(data);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (isMounted) {
+          setError(err.message || 'Warehouse not found.');
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id, fetchWarehouse]);
+
+  const handleToggleStatus = async () => {
+    if (!warehouse) return;
+    try {
+      const updated = await toggleWarehouseStatus(warehouse.id);
+      if (updated) {
+        setWarehouse((prev) => ({ ...prev, status: updated.status }));
+      }
+    } catch {
+      // Toast handles error display
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="product-module-page" style={{ padding: '60px 0' }}>
+        <LoadingState message="Loading warehouse details from database..." />
+      </div>
+    );
+  }
+
+  if (error || !warehouse) {
     return (
       <div className="product-module-page">
         <EmptyState
           title="Warehouse Not Found"
-          message={`No warehouse matching identifier "${id}" exists in the current system records.`}
+          message={error || `No warehouse matching identifier "${id}" exists in the current system records.`}
           action={
             <Link to="/warehouses" className="btn-sm btn-primary">
               <ArrowLeft size={15} />
@@ -49,8 +94,8 @@ export default function WarehouseDetailsPage() {
   }
 
   // Key KPI metrics
-  const capacity = warehouse.capacity || 0;
-  const currentStock = warehouse.currentStock || 0;
+  const capacity = Number(warehouse.capacity) || 0;
+  const currentStock = Number(warehouse.currentStock) || 0;
   const availableCapacity = Math.max(0, capacity - currentStock);
   const utilizationPct = capacity > 0 ? ((currentStock / capacity) * 100).toFixed(1) : 0;
 
@@ -115,7 +160,7 @@ export default function WarehouseDetailsPage() {
           <button
             type="button"
             className="btn-sm btn-secondary"
-            onClick={() => toggleWarehouseStatus(warehouse.id)}
+            onClick={handleToggleStatus}
             title="Toggle between ACTIVE and INACTIVE state"
           >
             <Power size={14} />
@@ -179,7 +224,7 @@ export default function WarehouseDetailsPage() {
         <div className="stat-card">
           <div className="stat-card-top">
             <span className="stat-card-label">Capacity Utilization</span>
-            <div className="stat-card-icon-wrap" style={{ color: utilizationPct >= 80 ? '#d97706' : '#2563eb' }}>
+            <div className="stat-card-icon-wrap" style={{ color: Number(utilizationPct) >= 80 ? '#d97706' : '#2563eb' }}>
               <PieChart size={20} />
             </div>
           </div>
@@ -191,8 +236,8 @@ export default function WarehouseDetailsPage() {
               <div
                 className="progress-bar"
                 style={{
-                  width: `${Math.min(100, utilizationPct)}%`,
-                  backgroundColor: utilizationPct >= 90 ? '#ef4444' : utilizationPct >= 75 ? '#f59e0b' : '#3b82f6',
+                  width: `${Math.min(100, Number(utilizationPct))}%`,
+                  backgroundColor: Number(utilizationPct) >= 90 ? '#ef4444' : Number(utilizationPct) >= 75 ? '#f59e0b' : '#3b82f6',
                 }}
               />
             </div>
@@ -228,7 +273,7 @@ export default function WarehouseDetailsPage() {
               </div>
               <div className="details-key-val-item">
                 <span className="details-key">Commissioned Date</span>
-                <span className="details-val">{warehouse.createdAt || '2025-11-01'}</span>
+                <span className="details-val">{warehouse.createdDate || (warehouse.createdAt ? String(warehouse.createdAt).split('T')[0] : '—')}</span>
               </div>
             </div>
           </div>
@@ -243,19 +288,19 @@ export default function WarehouseDetailsPage() {
             <div className="details-key-val-grid">
               <div className="details-key-val-item full-width" style={{ gridColumn: '1 / -1' }}>
                 <span className="details-key">Street Address</span>
-                <span className="details-val">{warehouse.address}</span>
+                <span className="details-val">{warehouse.address || '—'}</span>
               </div>
               <div className="details-key-val-item">
                 <span className="details-key">City / District</span>
-                <span className="details-val">{warehouse.city}</span>
+                <span className="details-val">{warehouse.city || '—'}</span>
               </div>
               <div className="details-key-val-item">
                 <span className="details-key">State Jurisdiction</span>
-                <span className="details-val">{warehouse.state}</span>
+                <span className="details-val">{warehouse.state || '—'}</span>
               </div>
               <div className="details-key-val-item">
                 <span className="details-key">Postal Pincode</span>
-                <span className="details-val">{warehouse.pincode}</span>
+                <span className="details-val">{warehouse.pincode || '—'}</span>
               </div>
               <div className="details-key-val-item">
                 <span className="details-key">Region</span>
@@ -277,7 +322,7 @@ export default function WarehouseDetailsPage() {
             <div className="details-key-val-grid">
               <div className="details-key-val-item">
                 <span className="details-key">Station Manager</span>
-                <span className="details-val">{warehouse.managerName}</span>
+                <span className="details-val">{warehouse.managerName || (warehouse.manager ? warehouse.manager.name : '—')}</span>
               </div>
               <div className="details-key-val-item">
                 <span className="details-key">Workforce Headcount</span>
@@ -290,16 +335,24 @@ export default function WarehouseDetailsPage() {
                 <span className="details-key">Official Email</span>
                 <span className="details-val" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Mail size={13} color="#64748b" />
-                  <a href={`mailto:${warehouse.managerEmail}`} style={{ color: '#2563eb' }}>
-                    {warehouse.managerEmail}
-                  </a>
+                  {warehouse.managerEmail ? (
+                    <a href={`mailto:${warehouse.managerEmail}`} style={{ color: '#2563eb' }}>
+                      {warehouse.managerEmail}
+                    </a>
+                  ) : warehouse.manager ? (
+                    <a href={`mailto:${warehouse.manager.email}`} style={{ color: '#2563eb' }}>
+                      {warehouse.manager.email}
+                    </a>
+                  ) : (
+                    '—'
+                  )}
                 </span>
               </div>
               <div className="details-key-val-item full-width" style={{ gridColumn: '1 / -1' }}>
                 <span className="details-key">Primary Phone</span>
                 <span className="details-val" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Phone size={13} color="#64748b" />
-                  {warehouse.managerPhone}
+                  {warehouse.managerPhone || '—'}
                 </span>
               </div>
             </div>

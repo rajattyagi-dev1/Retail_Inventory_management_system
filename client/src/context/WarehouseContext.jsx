@@ -1,101 +1,176 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { WarehouseContext } from './warehouseContextInstance';
-import { INITIAL_WAREHOUSES } from '../utils/warehouseMockData';
+import warehouseService from '../services/warehouseService';
 
 export function WarehouseProvider({ children }) {
-  const [warehouses, setWarehouses] = useState(INITIAL_WAREHOUSES);
+  const [warehouses, setWarehouses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 1,
+  });
   const [toast, setToast] = useState(null);
 
-  const showToast = (message, type = 'success') => {
+  const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type });
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       setToast(null);
     }, 3500);
-  };
+    return () => clearTimeout(timer);
+  }, []);
 
-  const getWarehouseById = (id) => {
-    if (!id) return null;
-    return warehouses.find(
-      (w) => String(w.id) === String(id) || w.code.toLowerCase() === String(id).toLowerCase()
-    );
-  };
+  const fetchWarehouses = useCallback(async (params = {}) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await warehouseService.getWarehouses(params);
+      setWarehouses(result.data);
+      if (result.pagination) {
+        setPagination(result.pagination);
+      }
+      return result;
+    } catch (err) {
+      console.error('Failed to fetch warehouses:', err);
+      const msg = err.message || 'Failed to load warehouses from server.';
+      setError(msg);
+      return { data: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 1 } };
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const addWarehouse = (formData) => {
-    const today = new Date().toISOString().split('T')[0];
-    const capacityNum = parseInt(formData.capacity, 10) || 10000;
-    const staffNum = parseInt(formData.staffCount, 10) || 0;
-    const currentStockNum = parseInt(formData.currentStock, 10) || 0;
+  const fetchWarehouse = useCallback(async (id) => {
+    try {
+      const warehouse = await warehouseService.getWarehouseById(id);
+      return warehouse;
+    } catch (err) {
+      console.error(`Failed to fetch warehouse ${id}:`, err);
+      throw err;
+    }
+  }, []);
 
-    const newWarehouse = {
-      id: `wh-${Date.now()}`,
-      code: formData.code.trim().toUpperCase(),
-      name: formData.name.trim(),
-      address: formData.address.trim(),
-      city: formData.city.trim(),
-      state: formData.state.trim(),
-      pincode: formData.pincode.trim(),
-      managerName: formData.managerName.trim(),
-      managerEmail: formData.managerEmail.trim(),
-      managerPhone: formData.managerPhone.trim(),
-      capacity: capacityNum,
-      currentStock: currentStockNum,
-      status: formData.status || 'ACTIVE',
-      staffCount: staffNum,
-      createdAt: today,
-    };
+  const getWarehouseById = useCallback(
+    (id) => {
+      if (!id) return null;
+      return (
+        warehouses.find(
+          (w) =>
+            String(w.id) === String(id) ||
+            w.code?.toLowerCase() === String(id).toLowerCase()
+        ) || null
+      );
+    },
+    [warehouses]
+  );
 
-    setWarehouses((prev) => [newWarehouse, ...prev]);
-    showToast(`Warehouse "${newWarehouse.name}" created successfully.`);
-    return newWarehouse;
-  };
+  const createWarehouse = useCallback(
+    async (formData) => {
+      try {
+        const newWarehouse = await warehouseService.createWarehouse(formData);
+        setWarehouses((prev) => [newWarehouse, ...prev]);
+        showToast(`Warehouse "${newWarehouse.name}" created successfully.`, 'success');
+        return newWarehouse;
+      } catch (err) {
+        const msg = err.message || 'Failed to create warehouse.';
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [showToast]
+  );
 
-  const updateWarehouse = (id, updatedFields) => {
-    setWarehouses((prev) =>
-      prev.map((wh) => {
-        if (String(wh.id) !== String(id)) return wh;
+  // Backward-compatible alias
+  const addWarehouse = createWarehouse;
 
-        return {
-          ...wh,
-          ...updatedFields,
-          capacity: parseInt(updatedFields.capacity, 10) || wh.capacity,
-          staffCount: parseInt(updatedFields.staffCount, 10) ?? wh.staffCount,
-          currentStock: parseInt(updatedFields.currentStock, 10) ?? wh.currentStock,
-        };
-      })
-    );
-
-    showToast('Warehouse details updated successfully.');
-  };
-
-  const toggleWarehouseStatus = (id) => {
-    setWarehouses((prev) =>
-      prev.map((w) => {
-        if (String(w.id) !== String(id)) return w;
-        const newStatus = w.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-        showToast(
-          `Warehouse "${w.name}" marked as ${newStatus}.`,
-          newStatus === 'ACTIVE' ? 'success' : 'info'
+  const updateWarehouse = useCallback(
+    async (id, updatedFields) => {
+      try {
+        const updated = await warehouseService.updateWarehouse(id, updatedFields);
+        setWarehouses((prev) =>
+          prev.map((wh) => (String(wh.id) === String(id) ? updated : wh))
         );
-        return { ...w, status: newStatus };
-      })
-    );
-  };
+        showToast(`Warehouse "${updated.name}" updated successfully.`, 'success');
+        return updated;
+      } catch (err) {
+        const msg = err.message || 'Failed to update warehouse.';
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [showToast]
+  );
+
+  const updateWarehouseStatus = useCallback(
+    async (id, status) => {
+      try {
+        const updated = await warehouseService.updateWarehouseStatus(id, status);
+        setWarehouses((prev) =>
+          prev.map((wh) => (String(wh.id) === String(id) ? updated : wh))
+        );
+        showToast(
+          `Warehouse "${updated.name}" status changed to ${updated.status}.`,
+          updated.status === 'ACTIVE' ? 'success' : 'info'
+        );
+        return updated;
+      } catch (err) {
+        const msg = err.message || 'Failed to update warehouse status.';
+        showToast(msg, 'error');
+        throw err;
+      }
+    },
+    [showToast]
+  );
+
+  const toggleWarehouseStatus = useCallback(
+    async (id) => {
+      const existing = warehouses.find((w) => String(w.id) === String(id));
+      if (!existing) return;
+      const newStatus = existing.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+      return updateWarehouseStatus(id, newStatus);
+    },
+    [warehouses, updateWarehouseStatus]
+  );
+
+  // Initial load from MySQL on mount
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        await fetchWarehouses({ page: 1, limit: 10 });
+      } catch (err) {
+        if (active) console.error('Initial warehouse catalog load failed:', err);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [fetchWarehouses]);
 
   return (
     <WarehouseContext.Provider
       value={{
         warehouses,
+        loading,
+        error,
+        pagination,
         toast,
         showToast,
+        fetchWarehouses,
+        fetchWarehouse,
         getWarehouseById,
+        createWarehouse,
         addWarehouse,
         updateWarehouse,
+        updateWarehouseStatus,
         toggleWarehouseStatus,
       }}
     >
       {children}
 
-      {/* Global Toast Feedback for Warehouse Actions */}
+      {/* Global Toast Feedback */}
       {toast && (
         <div
           className={`app-toast toast-${toast.type}`}
