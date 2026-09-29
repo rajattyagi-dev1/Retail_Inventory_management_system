@@ -9,15 +9,20 @@ function CategoryModalDialog({
   const [formData, setFormData] = useState({
     name: categoryToEdit?.name || '',
     description: categoryToEdit?.description || '',
-    status: categoryToEdit?.status || 'Active',
+    status: categoryToEdit?.status === 'Inactive' || categoryToEdit?.status === 'INACTIVE' ? 'Inactive' : 'Active',
   });
   const [errors, setErrors] = useState({});
+  const [modalError, setModalError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) {
       setErrors((prev) => ({ ...prev, [name]: null }));
+    }
+    if (modalError) {
+      setModalError(null);
     }
   };
 
@@ -30,11 +35,20 @@ function CategoryModalDialog({
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) return;
-    onSubmit(formData);
-    onClose();
+
+    setSubmitting(true);
+    setModalError(null);
+    try {
+      await onSubmit(formData);
+      onClose();
+    } catch (err) {
+      setModalError(err.message || 'Operation failed. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -61,6 +75,7 @@ function CategoryModalDialog({
             className="modal-close-btn"
             onClick={onClose}
             aria-label="Close modal"
+            disabled={submitting}
           >
             <X size={18} />
           </button>
@@ -68,6 +83,25 @@ function CategoryModalDialog({
 
         <form onSubmit={handleSubmit} noValidate>
           <div className="modal-body">
+            {/* Modal Error Alert */}
+            {modalError && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '6px',
+                padding: '10px 12px',
+                color: '#991b1b',
+                fontSize: '12.5px',
+                marginBottom: '14px',
+              }}>
+                <AlertCircle size={15} style={{ flexShrink: 0 }} />
+                <span>{modalError}</span>
+              </div>
+            )}
+
             <div className="form-field full-width">
               <label htmlFor="cat-name" className="form-label required">
                 Category Name
@@ -81,6 +115,7 @@ function CategoryModalDialog({
                 value={formData.name}
                 onChange={handleChange}
                 autoFocus
+                disabled={submitting}
               />
               {errors.name && (
                 <span className="form-error-msg">
@@ -101,6 +136,7 @@ function CategoryModalDialog({
                 placeholder="Brief summary of products falling under this category..."
                 value={formData.description}
                 onChange={handleChange}
+                disabled={submitting}
               />
             </div>
 
@@ -114,6 +150,7 @@ function CategoryModalDialog({
                 className="form-select"
                 value={formData.status}
                 onChange={handleChange}
+                disabled={submitting}
               >
                 <option value="Active">Active</option>
                 <option value="Inactive">Inactive</option>
@@ -126,12 +163,13 @@ function CategoryModalDialog({
               type="button"
               className="btn-sm btn-secondary"
               onClick={onClose}
+              disabled={submitting}
             >
               Cancel
             </button>
-            <button type="submit" className="btn-sm btn-primary">
+            <button type="submit" className="btn-sm btn-primary" disabled={submitting}>
               <CheckCircle2 size={15} />
-              <span>{categoryToEdit ? 'Save Changes' : 'Create Category'}</span>
+              <span>{submitting ? 'Saving...' : (categoryToEdit ? 'Save Changes' : 'Create Category')}</span>
             </button>
           </div>
         </form>

@@ -27,21 +27,35 @@ const UNIT_OPTIONS = [
  * 
  * @param {object} initialData - Pre-populated product data (for Edit mode)
  * @param {boolean} isEditMode - True if editing an existing product
- * @param {array} categories - List of available category objects
+ * @param {array} categories - List of available category objects from backend
  * @param {function} onSubmit - Submit handler passing validated form data
+ * @param {boolean} isSubmitting - Whether save action is in flight
+ * @param {string} apiError - Server-side error message if submission failed
  */
 export default function ProductForm({
   initialData = {},
   isEditMode = false,
   categories = [],
   onSubmit,
+  isSubmitting = false,
+  apiError = null,
 }) {
   const navigate = useNavigate();
+
+  const getInitialCategoryId = () => {
+    if (initialData.categoryId) return initialData.categoryId;
+    if (initialData.category) {
+      const match = categories.find((c) => c.name === initialData.category);
+      if (match) return match.id;
+    }
+    return categories[0]?.id || '';
+  };
 
   const [formData, setFormData] = useState({
     name: initialData.name || '',
     sku: initialData.sku || '',
-    category: initialData.category || (categories[0]?.name || 'Electronics'),
+    categoryId: getInitialCategoryId(),
+    category: initialData.category || '',
     brand: initialData.brand || '',
     description: initialData.description || '',
     costPrice: initialData.costPrice !== undefined ? String(initialData.costPrice) : '',
@@ -49,28 +63,39 @@ export default function ProductForm({
     unit: initialData.unit || 'Pieces',
     reorderLevel: initialData.reorderLevel !== undefined ? String(initialData.reorderLevel) : '10',
     currentStock: initialData.currentStock !== undefined ? String(initialData.currentStock) : '0',
-    status: initialData.status || 'Active',
+    status: initialData.status === 'Inactive' || initialData.status === 'INACTIVE' ? 'Inactive' : 'Active',
     imageUrl: initialData.imageUrl || '',
   });
 
   const [errors, setErrors] = useState({});
+  const [localSubmitting, setLocalSubmitting] = useState(false);
   const [imagePreview, setImagePreview] = useState(initialData.imageUrl || '');
 
+  const effectiveCategoryId = formData.categoryId ||
+    initialData.categoryId ||
+    (categories.find((c) => c.name === initialData.category)?.id) ||
+    (categories[0]?.id || '');
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => {
+      const updated = { ...prev, [name]: value };
+      if (name === 'categoryId') {
+        const cat = categories.find((c) => c.id === value);
+        updated.category = cat ? cat.name : '';
+      }
+      return updated;
+    });
 
     // Clear specific error on edit
-    if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: null }));
+    if (errors[name] || (name === 'categoryId' && errors.category)) {
+      setErrors((prev) => ({ ...prev, [name]: null, category: null, categoryId: null }));
     }
   };
 
   const handleImageFileChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Local client preview only (frontend-only)
       const objectUrl = URL.createObjectURL(file);
       setImagePreview(objectUrl);
       setFormData((prev) => ({ ...prev, imageUrl: objectUrl }));
@@ -95,8 +120,9 @@ export default function ProductForm({
       errs.sku = 'SKU should only contain letters, numbers, hyphens, and underscores.';
     }
 
-    if (!formData.category) {
-      errs.category = 'Category selection is required.';
+    const activeCatId = formData.categoryId || effectiveCategoryId;
+    if (!activeCatId) {
+      errs.categoryId = 'Category selection is required.';
     }
 
     if (!formData.brand.trim()) {
@@ -131,16 +157,32 @@ export default function ProductForm({
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) {
-      // Scroll to first error
       window.scrollTo({ top: 120, behavior: 'smooth' });
       return;
     }
 
-    onSubmit(formData);
+    const activeCatId = formData.categoryId || effectiveCategoryId;
+    const catObj = categories.find((c) => c.id === activeCatId);
+    const submissionPayload = {
+      ...formData,
+      categoryId: activeCatId,
+      category: catObj ? catObj.name : formData.category,
+    };
+
+    setLocalSubmitting(true);
+    try {
+      await onSubmit(submissionPayload);
+    } catch {
+      // Handled by parent or toast
+    } finally {
+      setLocalSubmitting(false);
+    }
   };
+
+  const isBusy = isSubmitting || localSubmitting;
 
   // Calculations for live margin preview
   const cost = parseFloat(formData.costPrice) || 0;
@@ -172,15 +214,35 @@ export default function ProductForm({
             type="button"
             className="btn-sm btn-secondary"
             onClick={() => navigate('/products')}
+            disabled={isBusy}
           >
             Cancel
           </button>
-          <button type="submit" className="btn-sm btn-primary">
+          <button type="submit" className="btn-sm btn-primary" disabled={isBusy}>
             <CheckCircle2 size={15} />
-            <span>{isEditMode ? 'Update Product' : 'Save Product'}</span>
+            <span>{isBusy ? 'Saving...' : (isEditMode ? 'Update Product' : 'Save Product')}</span>
           </button>
         </div>
       </div>
+
+      {/* Global Server Error Banner */}
+      {apiError && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          background: '#fef2f2',
+          border: '1px solid #fecaca',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          color: '#991b1b',
+          fontSize: '13.5px',
+          marginBottom: '16px',
+        }}>
+          <AlertCircle size={16} />
+          <span>{apiError}</span>
+        </div>
+      )}
 
       {/* SECTION 1 — BASIC INFORMATION */}
       <div className="card form-section-card">
@@ -208,6 +270,7 @@ export default function ProductForm({
               placeholder="e.g. Apple iPhone 15 (128 GB) - Black"
               value={formData.name}
               onChange={handleChange}
+              disabled={isBusy}
             />
             {errors.name && <span className="form-error-msg"><AlertCircle size={12} /> {errors.name}</span>}
           </div>
@@ -226,6 +289,7 @@ export default function ProductForm({
               value={formData.sku}
               onChange={handleChange}
               readOnly={isEditMode}
+              disabled={isBusy}
             />
             {isEditMode && (
               <span className="form-helper-text">SKU cannot be modified once registered in catalog.</span>
@@ -235,24 +299,25 @@ export default function ProductForm({
 
           {/* Category */}
           <div className="form-field">
-            <label htmlFor="category" className="form-label required">
+            <label htmlFor="categoryId" className="form-label required">
               Category
             </label>
             <select
-              id="category"
-              name="category"
-              className={`form-select ${errors.category ? 'error' : ''}`}
-              value={formData.category}
+              id="categoryId"
+              name="categoryId"
+              className={`form-select ${errors.categoryId ? 'error' : ''}`}
+              value={effectiveCategoryId}
               onChange={handleChange}
+              disabled={isBusy}
             >
               <option value="">Select Category</option>
               {categories.map((c) => (
-                <option key={c.id || c.name} value={c.name}>
+                <option key={c.id || c.name} value={c.id}>
                   {c.name}
                 </option>
               ))}
             </select>
-            {errors.category && <span className="form-error-msg"><AlertCircle size={12} /> {errors.category}</span>}
+            {errors.categoryId && <span className="form-error-msg"><AlertCircle size={12} /> {errors.categoryId}</span>}
           </div>
 
           {/* Brand */}
@@ -268,6 +333,7 @@ export default function ProductForm({
               placeholder="e.g. Apple, Samsung, Dell, boAt"
               value={formData.brand}
               onChange={handleChange}
+              disabled={isBusy}
             />
             {errors.brand && <span className="form-error-msg"><AlertCircle size={12} /> {errors.brand}</span>}
           </div>
@@ -283,6 +349,7 @@ export default function ProductForm({
               className="form-select"
               value={formData.status}
               onChange={handleChange}
+              disabled={isBusy}
             >
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
@@ -302,6 +369,7 @@ export default function ProductForm({
               placeholder="Enter product specifications, technical details, box contents..."
               value={formData.description}
               onChange={handleChange}
+              disabled={isBusy}
             />
           </div>
         </div>
@@ -337,6 +405,7 @@ export default function ProductForm({
                 placeholder="0.00"
                 value={formData.costPrice}
                 onChange={handleChange}
+                disabled={isBusy}
               />
             </div>
             {errors.costPrice && <span className="form-error-msg"><AlertCircle size={12} /> {errors.costPrice}</span>}
@@ -359,6 +428,7 @@ export default function ProductForm({
                 placeholder="0.00"
                 value={formData.sellingPrice}
                 onChange={handleChange}
+                disabled={isBusy}
               />
             </div>
             {errors.sellingPrice && <span className="form-error-msg"><AlertCircle size={12} /> {errors.sellingPrice}</span>}
@@ -371,13 +441,13 @@ export default function ProductForm({
                 <span className="profit-metric-label">Estimated Gross Margin:</span>
                 <span 
                   className="profit-metric-val"
-                  style={{ color: profitAmount >= 0 ? '#047857' : '#b91c1c' }}
+                  style={{ color: Number(profitAmount) >= 0 ? '#047857' : '#b91c1c' }}
                 >
-                  {profitMargin}% (₹{Number(profitAmount).toLocaleString()})
+                  {profitMargin}% (₹{Number(profitAmount).toLocaleString('en-IN')})
                 </span>
               </div>
               <span className="form-helper-text">
-                {profitAmount >= 0 
+                {Number(profitAmount) >= 0 
                   ? 'Healthy retail markup configured.' 
                   : 'Warning: Selling price is less than procurement cost price.'}
               </span>
@@ -410,6 +480,7 @@ export default function ProductForm({
               className={`form-select ${errors.unit ? 'error' : ''}`}
               value={formData.unit}
               onChange={handleChange}
+              disabled={isBusy}
             >
               {UNIT_OPTIONS.map((u) => (
                 <option key={u} value={u}>{u}</option>
@@ -432,6 +503,7 @@ export default function ProductForm({
               placeholder="e.g. 15"
               value={formData.reorderLevel}
               onChange={handleChange}
+              disabled={isBusy}
             />
             <span className="form-helper-text">
               Triggers "Low Stock" alerts when inventory drops below this count.
@@ -453,6 +525,7 @@ export default function ProductForm({
               placeholder="0"
               value={formData.currentStock}
               onChange={handleChange}
+              disabled={isBusy}
             />
             {errors.currentStock && <span className="form-error-msg"><AlertCircle size={12} /> {errors.currentStock}</span>}
           </div>
@@ -480,6 +553,7 @@ export default function ProductForm({
                   type="button"
                   className="btn-sm btn-secondary"
                   onClick={handleRemoveImage}
+                  disabled={isBusy}
                 >
                   <X size={14} /> Remove Image
                 </button>
@@ -499,6 +573,7 @@ export default function ProductForm({
                 accept="image/*"
                 className="visually-hidden"
                 onChange={handleImageFileChange}
+                disabled={isBusy}
               />
             </label>
           )}
@@ -511,12 +586,13 @@ export default function ProductForm({
           type="button"
           className="btn-sm btn-secondary"
           onClick={() => navigate('/products')}
+          disabled={isBusy}
         >
           Cancel
         </button>
-        <button type="submit" className="btn-sm btn-primary">
+        <button type="submit" className="btn-sm btn-primary" disabled={isBusy}>
           <CheckCircle2 size={16} />
-          <span>{isEditMode ? 'Save Changes' : 'Save Product'}</span>
+          <span>{isBusy ? 'Saving...' : (isEditMode ? 'Save Changes' : 'Save Product')}</span>
         </button>
       </div>
     </form>

@@ -1,19 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Edit3, Power, ArrowLeft, Tag } from 'lucide-react';
+import { Plus, Edit3, Power, ArrowLeft, Tag, Search, X } from 'lucide-react';
 import { useProducts } from '../../hooks/useProducts';
 import DataTable from '../../components/common/DataTable';
 import StatusBadge from '../../components/common/StatusBadge';
+import LoadingState from '../../components/common/LoadingState';
 import CategoryModal from '../../components/products/CategoryModal';
 
 /**
  * Categories Management Page (/products/categories).
+ * Connects to GET, POST, PUT, PATCH /api/categories with real MySQL persistence.
  */
 export default function CategoriesPage() {
-  const { categories, addCategory, updateCategory, toggleCategoryStatus } = useProducts();
+  const { 
+    categories, 
+    categoriesLoading, 
+    fetchCategories, 
+    createCategory, 
+    updateCategory, 
+    toggleCategoryStatus 
+  } = useProducts();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [categoryToEdit, setCategoryToEdit] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    fetchCategories({
+      search: debouncedSearch.trim() || undefined,
+      status: statusFilter !== 'All' ? statusFilter.toUpperCase() : undefined,
+      limit: 100,
+    });
+  }, [debouncedSearch, statusFilter, fetchCategories]);
 
   const handleOpenAddModal = () => {
     setCategoryToEdit(null);
@@ -25,12 +52,18 @@ export default function CategoriesPage() {
     setModalOpen(true);
   };
 
-  const handleModalSubmit = (formData) => {
+  const handleModalSubmit = async (formData) => {
     if (categoryToEdit) {
-      updateCategory(categoryToEdit.id, formData);
+      await updateCategory(categoryToEdit.id, formData);
     } else {
-      addCategory(formData);
+      await createCategory(formData);
     }
+    // Refresh list to sync counts and ordering
+    fetchCategories({
+      search: debouncedSearch.trim() || undefined,
+      status: statusFilter !== 'All' ? statusFilter.toUpperCase() : undefined,
+      limit: 100,
+    });
   };
 
   const columns = [
@@ -82,7 +115,9 @@ export default function CategoriesPage() {
       align: 'right',
       width: '130px',
       render: (row) => (
-        <span style={{ color: '#64748b', fontSize: '12px' }}>{row.createdDate || '—'}</span>
+        <span style={{ color: '#64748b', fontSize: '12px' }}>
+          {row.createdDate || (row.createdAt ? row.createdAt.split('T')[0] : '—')}
+        </span>
       ),
     },
     {
@@ -146,15 +181,79 @@ export default function CategoriesPage() {
         </div>
       </div>
 
+      {/* Filter Toolbar for Categories */}
+      <div className="filter-toolbar card" style={{ marginBottom: '16px' }}>
+        <div className="filter-row">
+          <div className="filter-search-box">
+            <Search size={16} className="filter-search-icon" />
+            <input
+              type="text"
+              className="filter-search-input"
+              placeholder="Search category name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                className="filter-clear-btn-inline"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear category search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          <div className="filter-dropdowns-group">
+            <div className="filter-select-wrapper">
+              <label htmlFor="cat-filter-status" className="filter-label">
+                Status:
+              </label>
+              <select
+                id="cat-filter-status"
+                className="filter-select"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="All">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+
+            {(Boolean(searchQuery) || statusFilter !== 'All') && (
+              <button
+                type="button"
+                className="btn-sm btn-secondary filter-reset-btn"
+                onClick={() => {
+                  setSearchQuery('');
+                  setStatusFilter('All');
+                }}
+              >
+                <X size={14} />
+                <span>Clear</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Categories Data Table */}
       <div className="card" style={{ overflow: 'hidden' }}>
-        <DataTable
-          columns={columns}
-          data={categories}
-          keyExtractor={(item) => item.id}
-          emptyTitle="No categories configured"
-          emptyMessage="Click 'Add Category' above to create your first product classification."
-        />
+        {categoriesLoading && categories.length === 0 ? (
+          <div style={{ padding: '40px 0' }}>
+            <LoadingState message="Loading categories from database..." />
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={categories}
+            keyExtractor={(item) => item.id}
+            emptyTitle="No categories configured"
+            emptyMessage="Click 'Add Category' above to create your first product classification."
+          />
+        )}
       </div>
 
       {/* Add / Edit Category Modal */}

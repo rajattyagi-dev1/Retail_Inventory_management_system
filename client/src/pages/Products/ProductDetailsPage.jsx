@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, 
@@ -11,24 +11,57 @@ import {
 import { useProducts } from '../../hooks/useProducts';
 import StatusBadge from '../../components/common/StatusBadge';
 import EmptyState from '../../components/common/EmptyState';
+import LoadingState from '../../components/common/LoadingState';
 
 /**
  * Product Details Page (/products/:id).
- * Displays full SKU specification, pricing breakdown, and warehouse distribution.
+ * Displays full SKU specification, pricing breakdown, and warehouse distribution directly from MySQL API.
  */
 export default function ProductDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getProductById } = useProducts();
+  const { fetchProduct } = useProducts();
 
-  const product = getProductById(id);
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  if (!product) {
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchProduct(id)
+      .then((data) => {
+        if (isMounted) {
+          setProduct(data);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (isMounted) {
+          setError(err.message || 'Product not found.');
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id, fetchProduct]);
+
+  if (loading) {
+    return (
+      <div className="product-module-page" style={{ padding: '60px 0' }}>
+        <LoadingState message="Loading product details from database..." />
+      </div>
+    );
+  }
+
+  if (error || !product) {
     return (
       <div className="product-module-page">
         <EmptyState
           title="Product Not Found"
-          message={`No product matching identifier "${id}" exists in the current session catalog.`}
+          message={error || `No product matching identifier "${id}" exists in the database.`}
           action={
             <Link to="/products" className="btn-sm btn-primary">
               <ArrowLeft size={15} />
@@ -41,9 +74,11 @@ export default function ProductDetailsPage() {
   }
 
   // Margin calculation
-  const marginAmt = (product.sellingPrice - product.costPrice).toFixed(2);
-  const marginPct = product.sellingPrice > 0 
-    ? (((product.sellingPrice - product.costPrice) / product.sellingPrice) * 100).toFixed(1) 
+  const cost = Number(product.costPrice) || 0;
+  const selling = Number(product.sellingPrice) || 0;
+  const marginAmt = (selling - cost).toFixed(2);
+  const marginPct = selling > 0 
+    ? (((selling - cost) / selling) * 100).toFixed(1) 
     : 0;
 
   return (
@@ -98,11 +133,13 @@ export default function ProductDetailsPage() {
             <div className="details-key-val-grid">
               <div className="details-key-val-item">
                 <span className="details-key">Category</span>
-                <span className="details-val">{product.category}</span>
+                <span className="details-val">
+                  {product.category || (product.categoryObj ? product.categoryObj.name : '—')}
+                </span>
               </div>
               <div className="details-key-val-item">
                 <span className="details-key">Brand</span>
-                <span className="details-val">{product.brand}</span>
+                <span className="details-val">{product.brand || '—'}</span>
               </div>
               <div className="details-key-val-item">
                 <span className="details-key">Unit of Measure</span>
@@ -126,11 +163,11 @@ export default function ProductDetailsPage() {
               </div>
               <div className="details-key-val-item">
                 <span className="details-key">Created Date</span>
-                <span className="details-val">{product.createdDate || '—'}</span>
+                <span className="details-val">{product.createdDate || (product.createdAt ? product.createdAt.split('T')[0] : '—')}</span>
               </div>
               <div className="details-key-val-item">
                 <span className="details-key">Last Updated</span>
-                <span className="details-val">{product.updatedDate || '—'}</span>
+                <span className="details-val">{product.updatedDate || (product.updatedAt ? product.updatedAt.split('T')[0] : '—')}</span>
               </div>
             </div>
 
@@ -159,21 +196,21 @@ export default function ProductDetailsPage() {
             <div className="pricing-stat-row">
               <div className="pricing-stat-box">
                 <span className="pricing-label">Procurement Cost</span>
-                <span className="pricing-amount">₹{Number(product.costPrice).toLocaleString('en-IN')}</span>
+                <span className="pricing-amount">₹{cost.toLocaleString('en-IN')}</span>
                 <span className="pricing-hint">Base unit cost</span>
               </div>
 
               <div className="pricing-stat-box">
                 <span className="pricing-label">Retail Selling Price</span>
                 <span className="pricing-amount" style={{ color: '#0f172a' }}>
-                  ₹{Number(product.sellingPrice).toLocaleString('en-IN')}
+                  ₹{selling.toLocaleString('en-IN')}
                 </span>
                 <span className="pricing-hint">MSRP / Listed price</span>
               </div>
 
               <div className="pricing-stat-box highlight">
                 <span className="pricing-label">Gross Margin</span>
-                <span className="pricing-amount" style={{ color: '#047857' }}>
+                <span className="pricing-amount" style={{ color: Number(marginAmt) >= 0 ? '#047857' : '#ef4444' }}>
                   {marginPct}%
                 </span>
                 <span className="pricing-hint">₹{Number(marginAmt).toLocaleString('en-IN')} profit/unit</span>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   Plus, 
@@ -7,93 +7,112 @@ import {
   Power, 
   Layers, 
   Package,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { useProducts } from '../../hooks/useProducts';
 import DataTable from '../../components/common/DataTable';
 import StatusBadge from '../../components/common/StatusBadge';
 import Pagination from '../../components/common/Pagination';
+import LoadingState from '../../components/common/LoadingState';
 import ProductFilters from '../../components/products/ProductFilters';
 
 const ITEMS_PER_PAGE = 8;
 
 /**
  * Product List Page (/products).
- * Displays searchable, filterable, and paginated product catalog with instant state actions.
+ * Displays searchable, filterable, and paginated product catalog connected to Express + MySQL.
  */
 export default function ProductListPage() {
   const navigate = useNavigate();
-  const { products, categories, toggleProductStatus } = useProducts();
+  const { 
+    products, 
+    categories, 
+    loading, 
+    error, 
+    pagination, 
+    fetchProducts, 
+    toggleProductStatus 
+  } = useProducts();
 
   // Filter and sort states
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [stockStatusFilter, setStockStatusFilter] = useState('All');
   const [sortBy, setSortBy] = useState('newest');
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Client-side filtering logic
-  const filteredProducts = useMemo(() => {
-    return products.filter((prod) => {
-      // 1. Text search across SKU, Name, and Brand
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchesSku = prod.sku?.toLowerCase().includes(q);
-        const matchesName = prod.name?.toLowerCase().includes(q);
-        const matchesBrand = prod.brand?.toLowerCase().includes(q);
-        if (!matchesSku && !matchesName && !matchesBrand) return false;
+  // Debounce search input to avoid overwhelming API on fast typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Request products from backend whenever filters, search, sort, or page change
+  useEffect(() => {
+    let categoryId = undefined;
+    if (categoryFilter !== 'All') {
+      const match = categories.find((c) => c.name === categoryFilter || c.id === categoryFilter);
+      if (match) {
+        categoryId = match.id;
       }
+    }
 
-      // 2. Category filter
-      if (categoryFilter !== 'All' && prod.category !== categoryFilter) {
-        return false;
-      }
+    let status = undefined;
+    if (statusFilter !== 'All') {
+      status = statusFilter.toUpperCase();
+    }
 
-      // 3. Status filter (Active / Inactive)
-      if (statusFilter !== 'All' && prod.status !== statusFilter) {
-        return false;
-      }
-
-      // 4. Stock status filter
-      if (stockStatusFilter !== 'All' && prod.stockStatus !== stockStatusFilter) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [products, searchQuery, categoryFilter, statusFilter, stockStatusFilter]);
-
-  // Client-side sorting logic
-  const sortedProducts = useMemo(() => {
-    const list = [...filteredProducts];
+    let sortField = 'createdAt';
+    let sortOrder = 'desc';
     switch (sortBy) {
       case 'name-asc':
-        return list.sort((a, b) => a.name.localeCompare(b.name));
+        sortField = 'name';
+        sortOrder = 'asc';
+        break;
       case 'name-desc':
-        return list.sort((a, b) => b.name.localeCompare(a.name));
+        sortField = 'name';
+        sortOrder = 'desc';
+        break;
       case 'price-low':
-        return list.sort((a, b) => a.sellingPrice - b.sellingPrice);
+        sortField = 'sellingPrice';
+        sortOrder = 'asc';
+        break;
       case 'price-high':
-        return list.sort((a, b) => b.sellingPrice - a.sellingPrice);
-      case 'stock-low':
-        return list.sort((a, b) => a.currentStock - b.currentStock);
-      case 'stock-high':
-        return list.sort((a, b) => b.currentStock - a.currentStock);
+        sortField = 'sellingPrice';
+        sortOrder = 'desc';
+        break;
       case 'newest':
       default:
-        // By created date descending or id
-        return list.sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || ''));
+        sortField = 'createdAt';
+        sortOrder = 'desc';
+        break;
     }
-  }, [filteredProducts, sortBy]);
 
-  // Pagination slice
-  const paginatedProducts = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return sortedProducts.slice(start, start + ITEMS_PER_PAGE);
-  }, [sortedProducts, currentPage]);
+    fetchProducts({
+      page: currentPage,
+      limit: ITEMS_PER_PAGE,
+      search: debouncedSearch.trim() || undefined,
+      categoryId,
+      status,
+      sortBy: sortField,
+      sortOrder,
+    });
+  }, [currentPage, debouncedSearch, categoryFilter, statusFilter, sortBy, categories, fetchProducts]);
+
+  // Optional stock status filter on currently retrieved page
+  const displayProducts = useMemo(() => {
+    if (stockStatusFilter === 'All') return products;
+    return products.filter((p) => p.stockStatus === stockStatusFilter);
+  }, [products, stockStatusFilter]);
 
   const handleClearFilters = () => {
     setSearchQuery('');
+    setDebouncedSearch('');
     setCategoryFilter('All');
     setStatusFilter('All');
     setStockStatusFilter('All');
@@ -123,6 +142,7 @@ export default function ProductListPage() {
 
   const handleSortChange = (val) => {
     setSortBy(val);
+    setCurrentPage(1);
   };
 
   // Table columns definition
@@ -166,14 +186,16 @@ export default function ProductListPage() {
       key: 'category',
       header: 'Category',
       render: (row) => (
-        <span style={{ color: '#475569', fontWeight: 500 }}>{row.category}</span>
+        <span style={{ color: '#475569', fontWeight: 500 }}>
+          {row.category || (row.categoryObj ? row.categoryObj.name : '—')}
+        </span>
       ),
     },
     {
       key: 'brand',
       header: 'Brand',
       render: (row) => (
-        <span style={{ color: '#64748b' }}>{row.brand}</span>
+        <span style={{ color: '#64748b' }}>{row.brand || '—'}</span>
       ),
     },
     {
@@ -265,7 +287,7 @@ export default function ProductListPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h2 className="module-title">Product Catalog</h2>
             <span className="nav-badge-pill" style={{ background: '#eff6ff', color: '#2563eb' }}>
-              {products.length} SKUs
+              {pagination.total} SKUs
             </span>
           </div>
           <p className="module-description">
@@ -286,6 +308,36 @@ export default function ProductListPage() {
         </div>
       </div>
 
+      {/* Error alert if any */}
+      {error && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: '#fef2f2',
+          border: '1px solid #fecaca',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          color: '#991b1b',
+          fontSize: '13.5px',
+          marginBottom: '16px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertCircle size={16} />
+            <span>{error}</span>
+          </div>
+          <button
+            type="button"
+            className="btn-sm btn-secondary"
+            style={{ padding: '4px 10px', fontSize: '12px' }}
+            onClick={() => fetchProducts({ page: currentPage, limit: ITEMS_PER_PAGE })}
+          >
+            <RefreshCw size={13} style={{ marginRight: 4 }} />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
       {/* Search & Filter Toolbar */}
       <ProductFilters
         searchQuery={searchQuery}
@@ -300,27 +352,35 @@ export default function ProductListPage() {
         onSortChange={handleSortChange}
         onClearFilters={handleClearFilters}
         categories={categories}
-        totalFilteredCount={sortedProducts.length}
-        totalCount={products.length}
+        totalFilteredCount={pagination.total}
+        totalCount={pagination.total}
       />
 
       {/* Products Data Table */}
       <div className="card" style={{ overflow: 'hidden' }}>
-        <DataTable
-          columns={columns}
-          data={paginatedProducts}
-          keyExtractor={(item) => item.id}
-          emptyTitle="No products match your criteria"
-          emptyMessage="Try adjusting your search terms or clearing active filters."
-        />
+        {loading && products.length === 0 ? (
+          <div style={{ padding: '40px 0' }}>
+            <LoadingState message="Loading catalog products from database..." />
+          </div>
+        ) : (
+          <>
+            <DataTable
+              columns={columns}
+              data={displayProducts}
+              keyExtractor={(item) => item.id}
+              emptyTitle="No products match your criteria"
+              emptyMessage="Try adjusting your search terms or clearing active filters."
+            />
 
-        {/* Client-side Pagination */}
-        <Pagination
-          currentPage={currentPage}
-          totalItems={sortedProducts.length}
-          pageSize={ITEMS_PER_PAGE}
-          onPageChange={(page) => setCurrentPage(page)}
-        />
+            {/* Server-driven Pagination */}
+            <Pagination
+              currentPage={currentPage}
+              totalItems={pagination.total}
+              pageSize={ITEMS_PER_PAGE}
+              onPageChange={(page) => setCurrentPage(page)}
+            />
+          </>
+        )}
       </div>
     </div>
   );
