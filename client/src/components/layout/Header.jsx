@@ -60,9 +60,52 @@ export default function Header({ onOpenMobileMenu }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const pageTitle = ROUTE_NAME_MAP[location.pathname] || 'Dashboard';
-  const pathSegment = location.pathname === '/' ? 'Dashboard' : location.pathname.substring(1).replace('-', ' ');
-  const capitalizedSegment = pathSegment.charAt(0).toUpperCase() + pathSegment.slice(1);
+  let pageTitle = ROUTE_NAME_MAP[location.pathname];
+  let breadcrumbTrail = [{ label: 'Home', path: '/dashboard' }];
+
+  if (location.pathname === '/' || location.pathname === '/dashboard') {
+    pageTitle = 'Dashboard Overview';
+    breadcrumbTrail.push({ label: 'Dashboard', path: '/dashboard' });
+  } else if (location.pathname === '/products') {
+    pageTitle = 'Product Catalog';
+    breadcrumbTrail.push({ label: 'Products', path: '/products' });
+  } else if (location.pathname === '/products/new') {
+    pageTitle = 'Add New Product';
+    breadcrumbTrail.push({ label: 'Products', path: '/products' });
+    breadcrumbTrail.push({ label: 'New Product', path: '/products/new' });
+  } else if (location.pathname === '/products/categories') {
+    pageTitle = 'Product Categories';
+    breadcrumbTrail.push({ label: 'Products', path: '/products' });
+    breadcrumbTrail.push({ label: 'Categories', path: '/products/categories' });
+  } else if (location.pathname.startsWith('/products/') && location.pathname.endsWith('/edit')) {
+    pageTitle = 'Edit Product';
+    breadcrumbTrail.push({ label: 'Products', path: '/products' });
+    breadcrumbTrail.push({ label: 'Edit SKU', path: location.pathname });
+  } else if (location.pathname.startsWith('/products/')) {
+    pageTitle = 'Product Details';
+    breadcrumbTrail.push({ label: 'Products', path: '/products' });
+    breadcrumbTrail.push({ label: 'Details', path: location.pathname });
+  } else if (location.pathname === '/warehouses') {
+    pageTitle = 'Warehouse Management';
+    breadcrumbTrail.push({ label: 'Warehouses', path: '/warehouses' });
+  } else if (location.pathname === '/warehouses/new') {
+    pageTitle = 'Add Warehouse';
+    breadcrumbTrail.push({ label: 'Warehouses', path: '/warehouses' });
+    breadcrumbTrail.push({ label: 'New Facility', path: '/warehouses/new' });
+  } else if (location.pathname.startsWith('/warehouses/') && location.pathname.endsWith('/edit')) {
+    pageTitle = 'Edit Warehouse';
+    breadcrumbTrail.push({ label: 'Warehouses', path: '/warehouses' });
+    breadcrumbTrail.push({ label: 'Edit Facility', path: location.pathname });
+  } else if (location.pathname.startsWith('/warehouses/')) {
+    pageTitle = 'Warehouse Details';
+    breadcrumbTrail.push({ label: 'Warehouses', path: '/warehouses' });
+    breadcrumbTrail.push({ label: 'Overview', path: location.pathname });
+  } else {
+    pageTitle = ROUTE_NAME_MAP[location.pathname] || 'Console';
+    const pathSegment = location.pathname.substring(1).replace('-', ' ');
+    const capitalized = pathSegment.charAt(0).toUpperCase() + pathSegment.slice(1);
+    breadcrumbTrail.push({ label: capitalized, path: location.pathname });
+  }
 
   const unreadCount = MOCK_NOTIFICATIONS.filter((n) => n.unread).length;
 
@@ -81,9 +124,18 @@ export default function Header({ onOpenMobileMenu }) {
 
         <div className="header-title-container">
           <div className="header-breadcrumbs">
-            <Link to="/dashboard" className="breadcrumb-root">Home</Link>
-            <span className="breadcrumb-separator">/</span>
-            <span className="breadcrumb-active">{capitalizedSegment}</span>
+            {breadcrumbTrail.map((crumb, idx) => (
+              <React.Fragment key={crumb.path + idx}>
+                {idx > 0 && <span className="breadcrumb-separator">/</span>}
+                {idx === breadcrumbTrail.length - 1 ? (
+                  <span className="breadcrumb-active">{crumb.label}</span>
+                ) : (
+                  <Link to={crumb.path} className="breadcrumb-root">
+                    {crumb.label}
+                  </Link>
+                )}
+              </React.Fragment>
+            ))}
           </div>
           <h1 className="header-page-title">{pageTitle}</h1>
         </div>

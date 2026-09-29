@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   Package,
+  Tag,
   Boxes,
   Warehouse,
   Truck,
@@ -30,14 +31,15 @@ const NAVIGATION_GROUPS = [
   {
     title: 'CATALOG',
     items: [
-      { name: 'Products', path: '/products', icon: Package, badge: '1.4k' },
+      { name: 'Products', path: '/products', icon: Package, badge: '12' },
+      { name: 'Categories', path: '/products/categories', icon: Tag, badge: '4' },
     ],
   },
   {
     title: 'INVENTORY',
     items: [
       { name: 'Inventory', path: '/inventory', icon: Boxes },
-      { name: 'Warehouses', path: '/warehouses', icon: Warehouse, badge: '3' },
+      { name: 'Warehouses', path: '/warehouses', icon: Warehouse, badge: '6' },
     ],
   },
   {

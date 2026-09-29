@@ -22,12 +22,19 @@ export default function StatusBadge({ status, type = 'status', className = '' })
   }
 
   // Handle standard status badges
-  const normalizedStatus = status.toLowerCase().replace(/\s+/g, '-');
+  const normalizedStatus = status.toLowerCase().replace(/[\s_]+/g, '-');
+  const displayLabel = status.includes('_')
+    ? status
+        .toLowerCase()
+        .split('_')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ')
+    : status;
 
   return (
     <span className={`status-badge ${normalizedStatus} ${className}`}>
       <span className="status-dot" aria-hidden="true" />
-      <span>{status}</span>
+      <span>{displayLabel}</span>
     </span>
   );
 }
