@@ -100,6 +100,25 @@ export default function Header({ onOpenMobileMenu }) {
     pageTitle = 'Warehouse Details';
     breadcrumbTrail.push({ label: 'Warehouses', path: '/warehouses' });
     breadcrumbTrail.push({ label: 'Overview', path: location.pathname });
+  } else if (location.pathname === '/inventory') {
+    pageTitle = 'Inventory Management';
+    breadcrumbTrail.push({ label: 'Inventory', path: '/inventory' });
+  } else if (location.pathname === '/inventory/movements') {
+    pageTitle = 'Stock Movements Ledger';
+    breadcrumbTrail.push({ label: 'Inventory', path: '/inventory' });
+    breadcrumbTrail.push({ label: 'Stock Movements', path: '/inventory/movements' });
+  } else if (location.pathname.startsWith('/inventory/warehouse/')) {
+    pageTitle = 'Warehouse Inventory';
+    breadcrumbTrail.push({ label: 'Inventory', path: '/inventory' });
+    breadcrumbTrail.push({ label: 'Warehouse View', path: location.pathname });
+  } else if (location.pathname.startsWith('/inventory/product/')) {
+    pageTitle = 'Product Stock Distribution';
+    breadcrumbTrail.push({ label: 'Inventory', path: '/inventory' });
+    breadcrumbTrail.push({ label: 'Product Stock', path: location.pathname });
+  } else if (location.pathname.startsWith('/inventory/')) {
+    pageTitle = 'Inventory Allocation Details';
+    breadcrumbTrail.push({ label: 'Inventory', path: '/inventory' });
+    breadcrumbTrail.push({ label: 'SKU Allocation', path: location.pathname });
   } else {
     pageTitle = ROUTE_NAME_MAP[location.pathname] || 'Console';
     const pathSegment = location.pathname.substring(1).replace('-', ' ');

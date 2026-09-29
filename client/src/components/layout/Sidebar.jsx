@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Database,
+  History,
 } from 'lucide-react';
 
 const NAVIGATION_GROUPS = [
@@ -38,8 +39,9 @@ const NAVIGATION_GROUPS = [
   {
     title: 'INVENTORY',
     items: [
-      { name: 'Inventory', path: '/inventory', icon: Boxes },
+      { name: 'Inventory', path: '/inventory', icon: Boxes, badge: '22' },
       { name: 'Warehouses', path: '/warehouses', icon: Warehouse, badge: '6' },
+      { name: 'Stock Movements', path: '/inventory/movements', icon: History },
     ],
   },
   {

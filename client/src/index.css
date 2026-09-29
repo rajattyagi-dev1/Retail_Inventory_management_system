@@ -946,24 +946,45 @@ input, select, textarea {
   font-weight: 600;
 }
 
-.movement-badge.inbound {
+.movement-badge.inbound,
+.movement-badge.receipt {
   background-color: #ecfdf5;
   color: #047857;
+  border: 1px solid #a7f3d0;
 }
 
-.movement-badge.outbound {
+.movement-badge.outbound,
+.movement-badge.sale {
   background-color: #eff6ff;
   color: #1d4ed8;
+  border: 1px solid #bfdbfe;
 }
 
-.movement-badge.transfer {
+.movement-badge.transfer,
+.movement-badge.transfer-in,
+.movement-badge.transfer_in {
   background-color: #faf5ff;
   color: #6b21a8;
+  border: 1px solid #e9d5ff;
+}
+
+.movement-badge.transfer-out,
+.movement-badge.transfer_out {
+  background-color: #fdf2f8;
+  color: #9d174d;
+  border: 1px solid #fbcfe8;
 }
 
 .movement-badge.adjustment {
   background-color: #fffbeb;
   color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.movement-badge.return {
+  background-color: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
 }
 
 /* Reusable Data Table */
