@@ -30,6 +30,8 @@ function StockAdjustmentDialog({
   const [performedBy, setPerformedBy] = useState('Inventory Supervisor');
   const [error, setError] = useState('');
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // Selected item object
   const currentItem = item || inventoryList.find((i) => String(i.id) === String(selectedInventoryId));
 
@@ -60,7 +62,7 @@ function StockAdjustmentDialog({
   const newReserved = Math.min(reservedStock, calculatedNewStock);
   const newAvailable = Math.max(0, calculatedNewStock - newReserved);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
@@ -79,23 +81,27 @@ function StockAdjustmentDialog({
       return;
     }
 
-    if (type === 'REMOVE STOCK' && parsedQty > currentStock) {
-      setError(`Cannot remove ${parsedQty} units. Maximum available to remove is ${currentStock} units.`);
-      return;
-    }
+    try {
+      setIsSubmitting(true);
+      const res = await adjustStock({
+        inventoryId: currentItem.id,
+        productId: currentItem.productId,
+        warehouseId: currentItem.warehouseId,
+        type,
+        quantity: parsedQty,
+        reason,
+        reference,
+        notes,
+        performedBy,
+      });
 
-    const res = adjustStock({
-      inventoryId: currentItem.id,
-      type,
-      quantity: parsedQty,
-      reason,
-      reference,
-      notes,
-      performedBy,
-    });
-
-    if (res) {
-      onClose();
+      if (res) {
+        onClose();
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to adjust stock. Please check inputs.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -389,9 +395,13 @@ function StockAdjustmentDialog({
             >
               Cancel
             </button>
-            <button type="submit" className="btn-sm btn-primary">
+            <button
+              type="submit"
+              className="btn-sm btn-primary"
+              disabled={isSubmitting}
+            >
               <CheckCircle2 size={15} />
-              <span>Confirm Adjustment</span>
+              <span>{isSubmitting ? 'Adjusting...' : 'Confirm Adjustment'}</span>
             </button>
           </div>
         </form>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -12,6 +12,7 @@ import { useWarehouses } from '../../hooks/useWarehouses';
 import DataTable from '../../components/common/DataTable';
 import StatusBadge from '../../components/common/StatusBadge';
 import Pagination from '../../components/common/Pagination';
+import LoadingState from '../../components/common/LoadingState';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -27,69 +28,69 @@ const MOVEMENT_TYPES = [
 /**
  * Stock Movements Ledger Page (/inventory/movements).
  * Complete audit trail of inventory receipts, dispatches, adjustments, and transfers.
+ * Fully backed by MySQL REST API GET /api/stock-movements.
  */
 export default function StockMovementPage() {
-  const { stockMovements } = useInventory();
+  const { stockMovements, movementPagination, fetchStockMovements } = useInventory();
   const { warehouses } = useWarehouses();
 
-  // Search and filter state
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [warehouseFilter, setWarehouseFilter] = useState('ALL');
   const [sortBy, setSortBy] = useState('newest');
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Client-side filtering
-  const filteredMovements = useMemo(() => {
-    return stockMovements.filter((mov) => {
-      // 1. Text search
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchesProduct = mov.productName?.toLowerCase().includes(q);
-        const matchesSku = mov.sku?.toLowerCase().includes(q);
-        const matchesRef = mov.reference?.toLowerCase().includes(q);
-        const matchesUser = mov.performedBy?.toLowerCase().includes(q);
-        const matchesWh = mov.warehouseName?.toLowerCase().includes(q);
-        if (!matchesProduct && !matchesSku && !matchesRef && !matchesUser && !matchesWh) {
-          return false;
-        }
-      }
-
-      // 2. Type filter
-      if (typeFilter !== 'ALL' && mov.type !== typeFilter) {
-        return false;
-      }
-
-      // 3. Warehouse filter
-      if (warehouseFilter !== 'ALL' && mov.warehouseName !== warehouseFilter) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [stockMovements, searchQuery, typeFilter, warehouseFilter]);
-
-  // Client-side sorting
-  const sortedMovements = useMemo(() => {
-    const list = [...filteredMovements];
-    switch (sortBy) {
+  const getSortParams = (key) => {
+    switch (key) {
       case 'qty-high':
-        return list.sort((a, b) => b.quantity - a.quantity);
+        return { sortBy: 'quantity', sortOrder: 'desc' };
       case 'qty-low':
-        return list.sort((a, b) => a.quantity - b.quantity);
-      case 'product-asc':
-        return list.sort((a, b) => a.productName.localeCompare(b.productName));
+        return { sortBy: 'quantity', sortOrder: 'asc' };
       case 'newest':
       default:
-        return list.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+        return { sortBy: 'createdAt', sortOrder: 'desc' };
     }
-  }, [filteredMovements, sortBy]);
+  };
 
-  // Pagination slice
-  const paginatedMovements = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return sortedMovements.slice(start, start + ITEMS_PER_PAGE);
-  }, [sortedMovements, currentPage]);
+  const loadMovements = useCallback(async () => {
+    setLoading(true);
+    const params = {
+      page: currentPage,
+      limit: ITEMS_PER_PAGE,
+      ...getSortParams(sortBy),
+    };
+
+    if (searchQuery.trim()) {
+      params.search = searchQuery.trim();
+    }
+
+    if (typeFilter !== 'ALL') {
+      params.movementType = typeFilter;
+    }
+
+    if (warehouseFilter !== 'ALL') {
+      const foundWh = warehouses.find(
+        (w) => w.name === warehouseFilter || w.id === warehouseFilter
+      );
+      if (foundWh) {
+        params.warehouseId = foundWh.id;
+      }
+    }
+
+    try {
+      await fetchStockMovements(params);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, searchQuery, typeFilter, warehouseFilter, sortBy, warehouses, fetchStockMovements]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadMovements();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [loadMovements]);
 
   const handleClearFilters = () => {
     setSearchQuery('');
@@ -197,6 +198,8 @@ export default function StockMovementPage() {
     warehouseFilter !== 'ALL' ||
     sortBy !== 'newest';
 
+  const totalCount = movementPagination?.total || stockMovements.length;
+
   return (
     <div className="product-module-page">
       {/* Header Bar */}
@@ -209,7 +212,7 @@ export default function StockMovementPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: 4 }}>
             <h2 className="module-title">Stock Movements</h2>
             <span className="nav-badge-pill" style={{ background: '#eff6ff', color: '#2563eb' }}>
-              {stockMovements.length} Logged Entries
+              {totalCount} Logged Entries
             </span>
           </div>
           <p className="module-description">
@@ -310,12 +313,14 @@ export default function StockMovementPage() {
                 id="mov-sort-select"
                 className="filter-select"
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
+                onChange={(e) => {
+                  setSortBy(e.target.value);
+                  setCurrentPage(1);
+                }}
               >
                 <option value="newest">Latest First</option>
                 <option value="qty-high">Quantity (Highest First)</option>
                 <option value="qty-low">Quantity (Lowest First)</option>
-                <option value="product-asc">Product Name (A - Z)</option>
               </select>
             </div>
 
@@ -336,7 +341,7 @@ export default function StockMovementPage() {
         {/* Filter Summary Status */}
         <div className="filter-status-bar">
           <span>
-            Showing <strong>{sortedMovements.length}</strong> of <strong>{stockMovements.length}</strong> movement records
+            Showing <strong>{stockMovements.length}</strong> of <strong>{totalCount}</strong> movement records
           </span>
           {hasActiveFilters && (
             <span className="filter-active-pill">
@@ -348,18 +353,24 @@ export default function StockMovementPage() {
 
       {/* Movements Table */}
       <div className="card" style={{ overflow: 'hidden' }}>
-        <DataTable
-          columns={columns}
-          data={paginatedMovements}
-          keyExtractor={(m) => m.id}
-          emptyTitle="No stock movements match your criteria"
-          emptyMessage="Try adjusting your filter options or clearing search terms."
-        />
+        {loading && stockMovements.length === 0 ? (
+          <div style={{ padding: '40px 0' }}>
+            <LoadingState message="Loading movements ledger from server..." />
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={stockMovements}
+            keyExtractor={(m) => m.id}
+            emptyTitle="No stock movements match your criteria"
+            emptyMessage="Try adjusting your filter options or clearing search terms."
+          />
+        )}
 
-        {/* Client-side Pagination */}
+        {/* Server-side Pagination */}
         <Pagination
-          currentPage={currentPage}
-          totalItems={sortedMovements.length}
+          currentPage={movementPagination?.page || currentPage}
+          totalItems={totalCount}
           pageSize={ITEMS_PER_PAGE}
           onPageChange={(page) => setCurrentPage(page)}
         />

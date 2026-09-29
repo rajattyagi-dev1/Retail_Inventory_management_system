@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -11,35 +11,76 @@ import {
   Eye,
   Edit,
 } from 'lucide-react';
-import { useWarehouses } from '../../hooks/useWarehouses';
 import { useInventory } from '../../hooks/useInventory';
+import warehouseService from '../../services/warehouseService';
+import inventoryService from '../../services/inventoryService';
 import DataTable from '../../components/common/DataTable';
 import StatusBadge from '../../components/common/StatusBadge';
 import EmptyState from '../../components/common/EmptyState';
+import LoadingState from '../../components/common/LoadingState';
 import StockAdjustmentModal from '../../components/inventory/StockAdjustmentModal';
 
 /**
  * Warehouse Inventory Page (/inventory/warehouse/:warehouseId).
  * Focuses on all products stored within a single warehouse location.
+ * Connected to live backend API GET /api/inventory/warehouse/:warehouseId.
  */
 export default function WarehouseInventoryPage() {
   const { warehouseId } = useParams();
   const navigate = useNavigate();
-  const { getWarehouseById } = useWarehouses();
-  const { getWarehouseInventory, inventory } = useInventory();
+  const { inventory } = useInventory();
+
+  const [warehouse, setWarehouse] = useState(null);
+  const [warehouseItems, setWarehouseItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
 
-  const warehouse = getWarehouseById(warehouseId);
-  const warehouseItems = getWarehouseInventory(warehouseId);
+  const loadWarehouseData = useCallback(async () => {
+    if (!warehouseId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [whData, itemsData] = await Promise.all([
+        warehouseService.getWarehouseById(warehouseId),
+        inventoryService.getInventoryByWarehouse(warehouseId, { limit: 100 }),
+      ]);
 
-  if (!warehouse) {
+      if (!whData) {
+        setError(`No warehouse matching ID "${warehouseId}" was found in active records.`);
+        setWarehouse(null);
+      } else {
+        setWarehouse(whData);
+        setWarehouseItems(itemsData.data || []);
+      }
+    } catch (err) {
+      setError(err.message || `No warehouse matching ID "${warehouseId}" was found.`);
+      setWarehouse(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [warehouseId]);
+
+  useEffect(() => {
+    loadWarehouseData();
+  }, [loadWarehouseData]);
+
+  if (loading) {
+    return (
+      <div className="product-module-page">
+        <LoadingState message="Loading warehouse inventory allocations..." />
+      </div>
+    );
+  }
+
+  if (error || !warehouse) {
     return (
       <div className="product-module-page">
         <EmptyState
           title="Warehouse Not Found"
-          message={`No warehouse matching ID "${warehouseId}" was found in active records.`}
+          message={error || `No warehouse matching ID "${warehouseId}" was found in active records.`}
           action={
             <Link to="/warehouses" className="btn-sm btn-primary">
               <ArrowLeft size={15} />
@@ -56,8 +97,9 @@ export default function WarehouseInventoryPage() {
   const totalUnits = warehouseItems.reduce((acc, i) => acc + (i.currentStock || 0), 0);
   const lowStockCount = warehouseItems.filter((i) => i.stockStatus === 'LOW_STOCK').length;
   const outOfStockCount = warehouseItems.filter((i) => i.stockStatus === 'OUT_OF_STOCK').length;
+  const capacityNum = Number(warehouse.capacity) || 0;
   const utilizationPct =
-    warehouse.capacity > 0 ? Math.round((totalUnits / warehouse.capacity) * 100) : 0;
+    capacityNum > 0 ? Math.round((totalUnits / capacityNum) * 100) : 0;
 
   const handleOpenAdjustment = (item) => {
     setSelectedItem(item);
@@ -245,7 +287,9 @@ export default function WarehouseInventoryPage() {
             {totalUnits.toLocaleString('en-IN')}
           </div>
           <div className="stat-card-bottom">
-            <span className="stat-card-subtext">Limit: {warehouse.capacity.toLocaleString('en-IN')} units</span>
+            <span className="stat-card-subtext">
+              Limit: {capacityNum > 0 ? capacityNum.toLocaleString('en-IN') : 'N/A'} units
+            </span>
           </div>
         </div>
 
@@ -310,7 +354,10 @@ export default function WarehouseInventoryPage() {
         isOpen={adjustmentModalOpen}
         item={selectedItem}
         inventoryList={inventory}
-        onClose={() => setAdjustmentModalOpen(false)}
+        onClose={() => {
+          setAdjustmentModalOpen(false);
+          loadWarehouseData();
+        }}
       />
     </div>
   );

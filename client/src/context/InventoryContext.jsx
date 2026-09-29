@@ -1,11 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { InventoryContext } from './inventoryContextInstance';
-import { INITIAL_INVENTORY, calculateStockStatus } from '../utils/inventoryMockData';
-import { INITIAL_STOCK_MOVEMENTS } from '../utils/stockMovementMockData';
+import inventoryService from '../services/inventoryService';
+import stockMovementService from '../services/stockMovementService';
 
 export function InventoryProvider({ children }) {
-  const [inventory, setInventory] = useState(INITIAL_INVENTORY);
-  const [stockMovements, setStockMovements] = useState(INITIAL_STOCK_MOVEMENTS);
+  const [inventory, setInventory] = useState([]);
+  const [stockMovements, setStockMovements] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [isAdjusting, setIsAdjusting] = useState(false);
+  const [error, setError] = useState(null);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 1,
+  });
+  const [movementPagination, setMovementPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 1,
+  });
   const [toast, setToast] = useState(null);
 
   const showToast = (message, type = 'success') => {
@@ -15,169 +30,258 @@ export function InventoryProvider({ children }) {
     }, 3500);
   };
 
-  const getInventoryById = (id) => {
+  /**
+   * Fetch paginated & filtered inventory list from the real API.
+   */
+  const fetchInventory = useCallback(async (params = {}) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await inventoryService.getInventory(params);
+      setInventory(result.data);
+      setPagination(result.pagination);
+      return result;
+    } catch (err) {
+      const errMsg = err.message || 'Failed to load inventory records';
+      setError(errMsg);
+      return { data: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 1 } };
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /**
+   * Fetch a single inventory record by ID from the API.
+   */
+  const fetchInventoryById = useCallback(async (id) => {
     if (!id) return null;
-    return inventory.find((item) => String(item.id) === String(id));
-  };
+    try {
+      const item = await inventoryService.getInventoryById(id);
+      return item;
+    } catch (err) {
+      console.error(`Error fetching inventory ${id}:`, err);
+      return null;
+    }
+  }, []);
 
-  const getStockStatus = (currentStock, reorderLevel) => {
-    return calculateStockStatus(currentStock, reorderLevel);
-  };
+  /**
+   * Fetch inventory items for a specific warehouse from the API.
+   */
+  const fetchWarehouseInventory = useCallback(async (warehouseId, params = {}) => {
+    if (!warehouseId) return { data: [], pagination: {} };
+    try {
+      return await inventoryService.getInventoryByWarehouse(warehouseId, params);
+    } catch (err) {
+      console.error(`Error fetching warehouse inventory ${warehouseId}:`, err);
+      return { data: [], pagination: {} };
+    }
+  }, []);
 
-  const getWarehouseInventory = (warehouseId) => {
-    if (!warehouseId) return [];
-    return inventory.filter(
-      (item) =>
-        String(item.warehouseId) === String(warehouseId) ||
-        item.warehouseCode?.toLowerCase() === String(warehouseId).toLowerCase()
-    );
-  };
+  /**
+   * Fetch inventory allocations for a product across all warehouses from the API.
+   */
+  const fetchProductInventory = useCallback(async (productId, params = {}) => {
+    if (!productId) return { data: [], pagination: {} };
+    try {
+      return await inventoryService.getInventoryByProduct(productId, params);
+    } catch (err) {
+      console.error(`Error fetching product inventory ${productId}:`, err);
+      return { data: [], pagination: {} };
+    }
+  }, []);
 
-  const getProductInventory = (productId) => {
-    if (!productId) return [];
-    return inventory.filter(
-      (item) =>
-        String(item.productId) === String(productId) ||
-        item.sku?.toLowerCase() === String(productId).toLowerCase()
-    );
-  };
+  /**
+   * Fetch paginated stock movements ledger entries from the API.
+   */
+  const fetchStockMovements = useCallback(async (params = {}) => {
+    try {
+      const result = await stockMovementService.getStockMovements(params);
+      setStockMovements(result.data);
+      setMovementPagination(result.pagination);
+      return result;
+    } catch (err) {
+      console.error('Error fetching stock movements:', err);
+      return { data: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 1 } };
+    }
+  }, []);
 
-  const getLowStockItems = () => {
+  /**
+   * Fetch a single stock movement by ID from the API.
+   */
+  const fetchStockMovementById = useCallback(async (id) => {
+    if (!id) return null;
+    try {
+      return await stockMovementService.getStockMovementById(id);
+    } catch (err) {
+      console.error(`Error fetching movement ${id}:`, err);
+      return null;
+    }
+  }, []);
+
+  /**
+   * Fetch stock movements for a specific warehouse from the API.
+   */
+  const fetchWarehouseStockMovements = useCallback(async (warehouseId, params = {}) => {
+    if (!warehouseId) return { data: [], pagination: {} };
+    try {
+      return await stockMovementService.getStockMovementsByWarehouse(warehouseId, params);
+    } catch (err) {
+      console.error(`Error fetching warehouse movements ${warehouseId}:`, err);
+      return { data: [], pagination: {} };
+    }
+  }, []);
+
+  /**
+   * Fetch stock movements for a specific product from the API.
+   */
+  const fetchProductStockMovements = useCallback(async (productId, params = {}) => {
+    if (!productId) return { data: [], pagination: {} };
+    try {
+      return await stockMovementService.getStockMovementsByProduct(productId, params);
+    } catch (err) {
+      console.error(`Error fetching product movements ${productId}:`, err);
+      return { data: [], pagination: {} };
+    }
+  }, []);
+
+  /**
+   * Perform atomic stock adjustment via the backend API.
+   */
+  const adjustStock = useCallback(
+    async (payload) => {
+      setIsAdjusting(true);
+      try {
+        const result = await inventoryService.adjustStock(payload);
+
+        // Refresh inventory and movements data from authoritative backend
+        await Promise.all([
+          fetchInventory({ page: pagination.page || 1, limit: pagination.limit || 10 }),
+          fetchStockMovements({ page: 1, limit: 10 }),
+        ]);
+
+        showToast(result.message || 'Stock adjusted successfully', 'success');
+        return result.inventory;
+      } catch (err) {
+        const errorMessage = err.message || 'Failed to adjust stock';
+        showToast(errorMessage, 'error');
+        throw err;
+      } finally {
+        setIsAdjusting(false);
+      }
+    },
+    [fetchInventory, fetchStockMovements, pagination.page, pagination.limit]
+  );
+
+  /**
+   * Update stock compatibility helper (calls adjustStock with SET).
+   */
+  const updateStock = useCallback(
+    async (id, newStockCount) => {
+      return await adjustStock({
+        inventoryId: id,
+        type: 'SET',
+        quantity: newStockCount,
+        reason: 'Direct Stock Count Update',
+      });
+    },
+    [adjustStock]
+  );
+
+  // Synchronous lookup helpers for components that query in-memory state
+  const getInventoryById = useCallback(
+    (id) => {
+      if (!id) return null;
+      return inventory.find((item) => String(item.id) === String(id) || String(item.productId) === String(id)) || null;
+    },
+    [inventory]
+  );
+
+  const getStockStatus = useCallback((currentStock, reorderLevel) => {
+    const cur = Number(currentStock) || 0;
+    const reorder = Number(reorderLevel) || 0;
+    if (cur === 0) return 'OUT_OF_STOCK';
+    if (cur <= reorder) return 'LOW_STOCK';
+    return 'IN_STOCK';
+  }, []);
+
+  const getWarehouseInventory = useCallback(
+    (warehouseId) => {
+      if (!warehouseId) return [];
+      return inventory.filter(
+        (item) =>
+          String(item.warehouseId) === String(warehouseId) ||
+          item.warehouseCode?.toLowerCase() === String(warehouseId).toLowerCase()
+      );
+    },
+    [inventory]
+  );
+
+  const getProductInventory = useCallback(
+    (productId) => {
+      if (!productId) return [];
+      return inventory.filter(
+        (item) =>
+          String(item.productId) === String(productId) ||
+          item.sku?.toLowerCase() === String(productId).toLowerCase()
+      );
+    },
+    [inventory]
+  );
+
+  const getLowStockItems = useCallback(() => {
     return inventory.filter(
       (item) => item.stockStatus === 'LOW_STOCK' || item.stockStatus === 'OUT_OF_STOCK'
     );
-  };
+  }, [inventory]);
 
-  const getStockMovements = (inventoryId) => {
-    if (!inventoryId) return stockMovements;
-    return stockMovements.filter((mov) => String(mov.inventoryId) === String(inventoryId));
-  };
+  const getStockMovements = useCallback(
+    (inventoryId) => {
+      if (!inventoryId) return stockMovements;
+      return stockMovements.filter((mov) => String(mov.inventoryId) === String(inventoryId));
+    },
+    [stockMovements]
+  );
 
-  const updateStock = (id, newStockCount) => {
-    const today = new Date().toISOString().split('T')[0];
-    const newStock = Math.max(0, parseInt(newStockCount, 10) || 0);
-
-    setInventory((prev) =>
-      prev.map((item) => {
-        if (String(item.id) !== String(id)) return item;
-
-        const reserved = Math.min(item.reservedStock, newStock);
-        const available = Math.max(0, newStock - reserved);
-        const status = calculateStockStatus(newStock, item.reorderLevel);
-
-        return {
-          ...item,
-          currentStock: newStock,
-          reservedStock: reserved,
-          availableStock: available,
-          stockStatus: status,
-          lastUpdated: today,
-        };
-      })
-    );
-  };
-
-  const adjustStock = ({
-    inventoryId,
-    type, // 'ADD STOCK' | 'REMOVE STOCK' | 'SET STOCK'
-    quantity,
-    reason = 'Manual Reconciliation',
-    reference = '',
-    notes = '',
-    performedBy = 'Inventory Supervisor',
-  }) => {
-    const targetItem = getInventoryById(inventoryId);
-    if (!targetItem) {
-      showToast('Inventory record not found.', 'error');
-      return null;
-    }
-
-    const current = targetItem.currentStock;
-    const qty = parseInt(quantity, 10) || 0;
-    let newStock = current;
-    let diff = 0;
-
-    if (type === 'ADD STOCK') {
-      newStock = current + qty;
-      diff = qty;
-    } else if (type === 'REMOVE STOCK') {
-      if (qty > current) {
-        showToast(`Cannot remove ${qty} units. Current stock is only ${current}.`, 'warning');
-        return null;
+  // Initial data loading on provider mount
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        await Promise.all([
+          fetchInventory({ page: 1, limit: 100 }),
+          fetchStockMovements({ page: 1, limit: 100 }),
+        ]);
+      } catch (err) {
+        if (active) {
+          console.error('Initial inventory catalog load failed:', err);
+        }
       }
-      newStock = Math.max(0, current - qty);
-      diff = -qty;
-    } else if (type === 'SET STOCK') {
-      if (qty < 0) {
-        showToast('Stock quantity cannot be negative.', 'warning');
-        return null;
-      }
-      newStock = qty;
-      diff = newStock - current;
-    }
-
-    const reserved = Math.min(targetItem.reservedStock, newStock);
-    const available = Math.max(0, newStock - reserved);
-    const status = calculateStockStatus(newStock, targetItem.reorderLevel);
-    const today = new Date().toISOString().split('T')[0];
-    const nowTimestamp = new Date().toISOString().replace('T', ' ').slice(0, 16);
-    const refCode = reference.trim() || `ADJ-${Date.now().toString().slice(-6)}`;
-
-    // Create movement entry
-    const newMovement = {
-      id: `mov-${Date.now()}`,
-      inventoryId: targetItem.id,
-      productName: targetItem.productName,
-      sku: targetItem.sku,
-      warehouseName: targetItem.warehouseName,
-      warehouseCode: targetItem.warehouseCode,
-      type: 'ADJUSTMENT',
-      quantity: diff,
-      reference: refCode,
-      performedBy: performedBy.trim() || 'Inventory Supervisor',
-      timestamp: nowTimestamp,
-      notes: `${reason}${notes ? ` - ${notes}` : ''}`,
+    })();
+    return () => {
+      active = false;
     };
-
-    setStockMovements((prev) => [newMovement, ...prev]);
-
-    const movementSummary = `${diff >= 0 ? '+' : ''}${diff} units (${type})`;
-
-    setInventory((prev) =>
-      prev.map((item) => {
-        if (String(item.id) !== String(inventoryId)) return item;
-        return {
-          ...item,
-          currentStock: newStock,
-          reservedStock: reserved,
-          availableStock: available,
-          stockStatus: status,
-          lastMovement: movementSummary,
-          lastUpdated: today,
-        };
-      })
-    );
-
-    showToast(
-      `Adjusted stock for ${targetItem.productName} at ${targetItem.warehouseName}. New stock: ${newStock} units.`
-    );
-
-    return {
-      ...targetItem,
-      currentStock: newStock,
-      reservedStock: reserved,
-      availableStock: available,
-      stockStatus: status,
-    };
-  };
+  }, [fetchInventory, fetchStockMovements]);
 
   return (
     <InventoryContext.Provider
       value={{
         inventory,
         stockMovements,
+        loading,
+        isAdjusting,
+        error,
+        pagination,
+        movementPagination,
         toast,
         showToast,
+        fetchInventory,
+        fetchInventoryById,
+        fetchWarehouseInventory,
+        fetchProductInventory,
+        fetchStockMovements,
+        fetchStockMovementById,
+        fetchWarehouseStockMovements,
+        fetchProductStockMovements,
         getInventoryById,
         updateStock,
         adjustStock,

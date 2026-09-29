@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -12,8 +12,11 @@ import {
   FileText,
 } from 'lucide-react';
 import { useInventory } from '../../hooks/useInventory';
+import inventoryService from '../../services/inventoryService';
+import stockMovementService from '../../services/stockMovementService';
 import StatusBadge from '../../components/common/StatusBadge';
 import EmptyState from '../../components/common/EmptyState';
+import LoadingState from '../../components/common/LoadingState';
 import DataTable from '../../components/common/DataTable';
 import SectionHeader from '../../components/common/SectionHeader';
 import StockAdjustmentModal from '../../components/inventory/StockAdjustmentModal';
@@ -21,20 +24,71 @@ import StockAdjustmentModal from '../../components/inventory/StockAdjustmentModa
 /**
  * Inventory Details Page (/inventory/:id).
  * Demonstrates composite allocation of one product stored at one warehouse.
+ * Connected to live backend APIs GET /api/inventory/:id and GET /api/stock-movements.
  */
 export default function InventoryDetailsPage() {
   const { id } = useParams();
-  const { getInventoryById, getStockMovements, inventory } = useInventory();
+  const { inventory } = useInventory();
+
+  const [item, setItem] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const [movements, setMovements] = useState([]);
+  const [movementsLoading, setMovementsLoading] = useState(false);
   const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false);
 
-  const item = getInventoryById(id);
+  const loadData = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const invItem = await inventoryService.getInventoryById(id);
+      if (!invItem) {
+        setError(`No stock record matching identifier "${id}" exists in active records.`);
+        setItem(null);
+      } else {
+        setItem(invItem);
+        // Load stock movements for this inventory record
+        setMovementsLoading(true);
+        try {
+          const movRes = await stockMovementService.getStockMovements({
+            inventoryId: invItem.id,
+            limit: 50,
+          });
+          setMovements(movRes.data || []);
+        } catch (movErr) {
+          console.error('Failed to load movements for inventory item:', movErr);
+        } finally {
+          setMovementsLoading(false);
+        }
+      }
+    } catch (err) {
+      setError(err.message || `No stock record matching identifier "${id}" exists.`);
+      setItem(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
 
-  if (!item) {
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  if (loading) {
+    return (
+      <div className="product-module-page">
+        <LoadingState message="Loading inventory allocation details..." />
+      </div>
+    );
+  }
+
+  if (error || !item) {
     return (
       <div className="product-module-page">
         <EmptyState
           title="Inventory Record Not Found"
-          message={`No stock record matching identifier "${id}" exists in the current session.`}
+          message={error || `No stock record matching identifier "${id}" exists in the current records.`}
           action={
             <Link to="/inventory" className="btn-sm btn-primary">
               <ArrowLeft size={15} />
@@ -45,8 +99,6 @@ export default function InventoryDetailsPage() {
       </div>
     );
   }
-
-  const movements = getStockMovements(item.id);
 
   // Movement history columns
   const movementColumns = [
@@ -352,13 +404,19 @@ export default function InventoryDetailsPage() {
           />
         </div>
 
-        <DataTable
-          columns={movementColumns}
-          data={movements}
-          keyExtractor={(m) => m.id}
-          emptyTitle="No stock movements recorded"
-          emptyMessage="Adjust stock above to record the first audit movement for this allocation."
-        />
+        {movementsLoading ? (
+          <div style={{ padding: '30px 0' }}>
+            <LoadingState message="Loading movements ledger..." />
+          </div>
+        ) : (
+          <DataTable
+            columns={movementColumns}
+            data={movements}
+            keyExtractor={(m) => m.id}
+            emptyTitle="No stock movements recorded"
+            emptyMessage="Adjust stock above to record the first audit movement for this allocation."
+          />
+        )}
       </div>
 
       {/* Stock Adjustment Modal */}
@@ -366,7 +424,10 @@ export default function InventoryDetailsPage() {
         isOpen={adjustmentModalOpen}
         item={item}
         inventoryList={inventory}
-        onClose={() => setAdjustmentModalOpen(false)}
+        onClose={() => {
+          setAdjustmentModalOpen(false);
+          loadData();
+        }}
       />
     </div>
   );

@@ -20,8 +20,12 @@ const ALLOWED_SORT_FIELDS = [
 /**
  * Build Prisma where clause for stock movement filtering.
  */
-const buildMovementWhere = ({ productId, warehouseId, movementType, type, search }) => {
+const buildMovementWhere = ({ inventoryId, productId, warehouseId, movementType, type, search }) => {
   const where = {};
+
+  if (inventoryId && typeof inventoryId === 'string' && inventoryId.trim()) {
+    where.inventoryId = inventoryId.trim();
+  }
 
   if (productId && typeof productId === 'string' && productId.trim()) {
     where.productId = productId.trim();
@@ -63,6 +67,7 @@ const buildMovementWhere = ({ productId, warehouseId, movementType, type, search
 const getAllStockMovements = async ({
   page = 1,
   limit = 10,
+  inventoryId,
   productId,
   warehouseId,
   movementType,
@@ -75,7 +80,7 @@ const getAllStockMovements = async ({
   const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
   const skip = (parsedPage - 1) * parsedLimit;
 
-  const where = buildMovementWhere({ productId, warehouseId, movementType, type, search });
+  const where = buildMovementWhere({ inventoryId, productId, warehouseId, movementType, type, search });
 
   const cleanSortBy = ALLOWED_SORT_FIELDS.includes(sortBy) ? sortBy : 'createdAt';
   const cleanSortOrder = ['asc', 'desc'].includes(String(sortOrder).toLowerCase())

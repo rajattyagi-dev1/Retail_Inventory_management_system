@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowRightLeft,
@@ -13,6 +13,7 @@ import { useProducts } from '../../hooks/useProducts';
 import DataTable from '../../components/common/DataTable';
 import StatusBadge from '../../components/common/StatusBadge';
 import Pagination from '../../components/common/Pagination';
+import LoadingState from '../../components/common/LoadingState';
 import InventorySummaryCards from '../../components/inventory/InventorySummaryCards';
 import InventoryFilters from '../../components/inventory/InventoryFilters';
 import StockAdjustmentModal from '../../components/inventory/StockAdjustmentModal';
@@ -22,10 +23,11 @@ const ITEMS_PER_PAGE = 10;
 /**
  * Inventory List Page (/inventory).
  * Central hub for tracking stock across products and warehouse locations.
+ * Fully backed by MySQL REST API with server-side pagination, search, and filtering.
  */
 export default function InventoryListPage() {
   const navigate = useNavigate();
-  const { inventory } = useInventory();
+  const { inventory, loading, pagination, fetchInventory } = useInventory();
   const { warehouses } = useWarehouses();
   const { categories } = useProducts();
 
@@ -48,77 +50,86 @@ export default function InventoryListPage() {
     setAdjustmentModalOpen(true);
   };
 
-  // Client-side filtering logic
-  const filteredInventory = useMemo(() => {
-    return inventory.filter((item) => {
-      // 1. Full-text search
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchesProduct = item.productName?.toLowerCase().includes(q);
-        const matchesSku = item.sku?.toLowerCase().includes(q);
-        const matchesWarehouse = item.warehouseName?.toLowerCase().includes(q);
-        const matchesCode = item.warehouseCode?.toLowerCase().includes(q);
-        if (!matchesProduct && !matchesSku && !matchesWarehouse && !matchesCode) {
-          return false;
-        }
-      }
-
-      // 2. Stock status
-      if (statusFilter !== 'ALL' && item.stockStatus !== statusFilter) {
-        return false;
-      }
-
-      // 3. Warehouse filter
-      if (warehouseFilter !== 'ALL' && item.warehouseName !== warehouseFilter) {
-        return false;
-      }
-
-      // 4. Category filter
-      if (categoryFilter !== 'ALL' && item.category !== categoryFilter) {
-        return false;
-      }
-
-      // 5. Availability filter
-      if (availabilityFilter === 'HAS_STOCK' && item.currentStock <= 0) {
-        return false;
-      }
-      if (availabilityFilter === 'NO_STOCK' && item.currentStock > 0) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [inventory, searchQuery, statusFilter, warehouseFilter, categoryFilter, availabilityFilter]);
-
-  // Client-side sorting logic
-  const sortedInventory = useMemo(() => {
-    const list = [...filteredInventory];
-    switch (sortBy) {
+  // Translate UI sort key to API sortBy and sortOrder
+  const getSortParams = (key) => {
+    switch (key) {
       case 'product-asc':
-        return list.sort((a, b) => a.productName.localeCompare(b.productName));
+        return { sortBy: 'productName', sortOrder: 'asc' };
       case 'product-desc':
-        return list.sort((a, b) => b.productName.localeCompare(a.productName));
+        return { sortBy: 'productName', sortOrder: 'desc' };
       case 'stock-high':
-        return list.sort((a, b) => b.currentStock - a.currentStock);
+        return { sortBy: 'currentStock', sortOrder: 'desc' };
       case 'stock-low':
-        return list.sort((a, b) => a.currentStock - b.currentStock);
+        return { sortBy: 'currentStock', sortOrder: 'asc' };
       case 'avail-high':
-        return list.sort((a, b) => b.availableStock - a.availableStock);
+        return { sortBy: 'currentStock', sortOrder: 'desc' };
       case 'avail-low':
-        return list.sort((a, b) => a.availableStock - b.availableStock);
+        return { sortBy: 'currentStock', sortOrder: 'asc' };
       case 'warehouse-asc':
-        return list.sort((a, b) => a.warehouseName.localeCompare(b.warehouseName));
+        return { sortBy: 'warehouseName', sortOrder: 'asc' };
       case 'recent':
       default:
-        return list.sort((a, b) => (b.lastUpdated || '').localeCompare(a.lastUpdated || ''));
+        return { sortBy: 'updatedAt', sortOrder: 'desc' };
     }
-  }, [filteredInventory, sortBy]);
+  };
 
-  // Pagination slice
-  const paginatedInventory = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return sortedInventory.slice(start, start + ITEMS_PER_PAGE);
-  }, [sortedInventory, currentPage]);
+  // Fetch inventory with active server query parameters
+  const loadInventory = useCallback(() => {
+    const params = {
+      page: currentPage,
+      limit: ITEMS_PER_PAGE,
+      ...getSortParams(sortBy),
+    };
+
+    if (searchQuery.trim()) {
+      params.search = searchQuery.trim();
+    }
+
+    if (statusFilter !== 'ALL') {
+      params.stockStatus = statusFilter;
+    } else if (availabilityFilter === 'NO_STOCK') {
+      params.stockStatus = 'OUT_OF_STOCK';
+    }
+
+    if (warehouseFilter !== 'ALL') {
+      const foundWh = warehouses.find(
+        (w) => w.name === warehouseFilter || w.id === warehouseFilter
+      );
+      if (foundWh) {
+        params.warehouseId = foundWh.id;
+      }
+    }
+
+    if (categoryFilter !== 'ALL') {
+      const foundCat = categories.find(
+        (c) => c.name === categoryFilter || c.id === categoryFilter
+      );
+      if (foundCat) {
+        params.categoryId = foundCat.id;
+      }
+    }
+
+    fetchInventory(params);
+  }, [
+    currentPage,
+    searchQuery,
+    statusFilter,
+    availabilityFilter,
+    warehouseFilter,
+    categoryFilter,
+    sortBy,
+    warehouses,
+    categories,
+    fetchInventory,
+  ]);
+
+  // Debounced server fetch on query/filter change
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadInventory();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [loadInventory]);
 
   const handleClearFilters = () => {
     setSearchQuery('');
@@ -298,7 +309,7 @@ export default function InventoryListPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h2 className="module-title">Inventory</h2>
             <span className="nav-badge-pill" style={{ background: '#eff6ff', color: '#2563eb' }}>
-              {inventory.length} Stock Records
+              {pagination.total || inventory.length} Stock Records
             </span>
           </div>
           <p className="module-description">
@@ -354,28 +365,37 @@ export default function InventoryListPage() {
           setCurrentPage(1);
         }}
         sortBy={sortBy}
-        onSortChange={(s) => setSortBy(s)}
+        onSortChange={(s) => {
+          setSortBy(s);
+          setCurrentPage(1);
+        }}
         onClearFilters={handleClearFilters}
         warehouses={warehouses}
         categories={categories}
-        totalFilteredCount={sortedInventory.length}
-        totalCount={inventory.length}
+        totalFilteredCount={pagination.total || 0}
+        totalCount={pagination.total || 0}
       />
 
       {/* Inventory Table */}
       <div className="card" style={{ overflow: 'hidden' }}>
-        <DataTable
-          columns={columns}
-          data={paginatedInventory}
-          keyExtractor={(item) => item.id}
-          emptyTitle="No inventory items found"
-          emptyMessage="No stock records match your active search terms and filters."
-        />
+        {loading && inventory.length === 0 ? (
+          <div style={{ padding: '40px 0' }}>
+            <LoadingState message="Loading inventory from server..." />
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={inventory}
+            keyExtractor={(item) => item.id}
+            emptyTitle="No inventory items found"
+            emptyMessage="No stock records match your active search terms and filters."
+          />
+        )}
 
-        {/* Client-side Pagination */}
+        {/* Server-side Pagination */}
         <Pagination
-          currentPage={currentPage}
-          totalItems={sortedInventory.length}
+          currentPage={pagination.page || currentPage}
+          totalItems={pagination.total || 0}
           pageSize={ITEMS_PER_PAGE}
           onPageChange={(page) => setCurrentPage(page)}
         />
@@ -386,7 +406,10 @@ export default function InventoryListPage() {
         isOpen={adjustmentModalOpen}
         item={selectedItemForAdjustment}
         inventoryList={inventory}
-        onClose={() => setAdjustmentModalOpen(false)}
+        onClose={() => {
+          setAdjustmentModalOpen(false);
+          loadInventory();
+        }}
       />
     </div>
   );

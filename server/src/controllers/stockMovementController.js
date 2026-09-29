@@ -11,6 +11,7 @@ const getStockMovements = async (req, res, next) => {
     const {
       page,
       limit,
+      inventoryId,
       productId,
       warehouseId,
       movementType,
@@ -23,6 +24,7 @@ const getStockMovements = async (req, res, next) => {
     const result = await stockMovementService.getAllStockMovements({
       page,
       limit,
+      inventoryId,
       productId,
       warehouseId,
       movementType,

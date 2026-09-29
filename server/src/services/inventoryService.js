@@ -143,7 +143,7 @@ const formatStockMovement = (sm) => {
 /**
  * Build Prisma where clause for inventory filtering.
  */
-const buildInventoryWhere = ({ search, warehouseId, productId, stockStatus }) => {
+const buildInventoryWhere = ({ search, warehouseId, productId, categoryId, stockStatus }) => {
   const where = {};
 
   if (search && typeof search === 'string' && search.trim()) {
@@ -151,6 +151,7 @@ const buildInventoryWhere = ({ search, warehouseId, productId, stockStatus }) =>
     where.OR = [
       { product: { name: { contains: q } } },
       { product: { sku: { contains: q } } },
+      { product: { category: { name: { contains: q } } } },
       { warehouse: { name: { contains: q } } },
       { warehouse: { code: { contains: q } } },
     ];
@@ -162,6 +163,13 @@ const buildInventoryWhere = ({ search, warehouseId, productId, stockStatus }) =>
 
   if (productId && typeof productId === 'string' && productId.trim()) {
     where.productId = productId.trim();
+  }
+
+  if (categoryId && typeof categoryId === 'string' && categoryId.trim()) {
+    where.product = {
+      ...(where.product || {}),
+      categoryId: categoryId.trim(),
+    };
   }
 
   if (stockStatus && typeof stockStatus === 'string') {
@@ -220,6 +228,7 @@ const getAllInventory = async ({
   search,
   warehouseId,
   productId,
+  categoryId,
   stockStatus,
   sortBy = 'createdAt',
   sortOrder = 'desc',
@@ -228,7 +237,7 @@ const getAllInventory = async ({
   const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
   const skip = (parsedPage - 1) * parsedLimit;
 
-  const where = buildInventoryWhere({ search, warehouseId, productId, stockStatus });
+  const where = buildInventoryWhere({ search, warehouseId, productId, categoryId, stockStatus });
   const orderBy = buildInventoryOrderBy(sortBy, sortOrder);
 
   const [total, inventories] = await Promise.all([

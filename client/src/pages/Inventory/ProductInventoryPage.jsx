@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -11,35 +11,76 @@ import {
   Edit,
   Building2,
 } from 'lucide-react';
-import { useProducts } from '../../hooks/useProducts';
 import { useInventory } from '../../hooks/useInventory';
+import productService from '../../services/productService';
+import inventoryService from '../../services/inventoryService';
 import DataTable from '../../components/common/DataTable';
 import StatusBadge from '../../components/common/StatusBadge';
 import EmptyState from '../../components/common/EmptyState';
+import LoadingState from '../../components/common/LoadingState';
 import StockAdjustmentModal from '../../components/inventory/StockAdjustmentModal';
 
 /**
  * Product Inventory Page (/inventory/product/:productId).
  * Demonstrates the 1-to-many relationship: One Product -> Multiple Warehouses.
+ * Connected to live backend API GET /api/inventory/product/:productId.
  */
 export default function ProductInventoryPage() {
   const { productId } = useParams();
   const navigate = useNavigate();
-  const { getProductById } = useProducts();
-  const { getProductInventory, inventory } = useInventory();
+  const { inventory } = useInventory();
+
+  const [product, setProduct] = useState(null);
+  const [productStockAllocations, setProductStockAllocations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
 
-  const product = getProductById(productId);
-  const productStockAllocations = getProductInventory(productId);
+  const loadProductData = useCallback(async () => {
+    if (!productId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [prodData, itemsData] = await Promise.all([
+        productService.getProductById(productId),
+        inventoryService.getInventoryByProduct(productId, { limit: 100 }),
+      ]);
 
-  if (!product) {
+      if (!prodData) {
+        setError(`No catalog item matching ID "${productId}" exists in active records.`);
+        setProduct(null);
+      } else {
+        setProduct(prodData);
+        setProductStockAllocations(itemsData.data || []);
+      }
+    } catch (err) {
+      setError(err.message || `No catalog item matching ID "${productId}" exists.`);
+      setProduct(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [productId]);
+
+  useEffect(() => {
+    loadProductData();
+  }, [loadProductData]);
+
+  if (loading) {
+    return (
+      <div className="product-module-page">
+        <LoadingState message="Loading multi-hub product inventory..." />
+      </div>
+    );
+  }
+
+  if (error || !product) {
     return (
       <div className="product-module-page">
         <EmptyState
           title="Product Not Found"
-          message={`No catalog item matching ID "${productId}" exists in active records.`}
+          message={error || `No catalog item matching ID "${productId}" exists in active records.`}
           action={
             <Link to="/products" className="btn-sm btn-primary">
               <ArrowLeft size={15} />
@@ -200,9 +241,9 @@ export default function ProductInventoryPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: 6, color: '#64748b', fontSize: '12.5px' }}>
             <span className="sku-code">{product.sku}</span>
             <span>&bull;</span>
-            <span>{product.category}</span>
+            <span>{typeof product.category === 'string' ? product.category : product.category?.name}</span>
             <span>&bull;</span>
-            <span>Brand: <strong>{product.brand}</strong></span>
+            <span>Brand: <strong>{product.brand || 'Generic'}</strong></span>
           </div>
         </div>
 
@@ -305,7 +346,10 @@ export default function ProductInventoryPage() {
         isOpen={adjustmentModalOpen}
         item={selectedItem}
         inventoryList={inventory}
-        onClose={() => setAdjustmentModalOpen(false)}
+        onClose={() => {
+          setAdjustmentModalOpen(false);
+          loadProductData();
+        }}
       />
     </div>
   );
