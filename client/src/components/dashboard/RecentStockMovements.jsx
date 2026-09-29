@@ -2,12 +2,29 @@ import React from 'react';
 import SectionHeader from '../common/SectionHeader';
 import DataTable from '../common/DataTable';
 import StatusBadge from '../common/StatusBadge';
+import { useInventory } from '../../hooks/useInventory';
 import { MOCK_STOCK_MOVEMENTS } from '../../utils/mockData';
 
 /**
  * Recent inventory transactions and stock movements.
  */
 export default function RecentStockMovements() {
+  const { stockMovements } = useInventory();
+
+  const displayData = (stockMovements && stockMovements.length > 0)
+    ? stockMovements.slice(0, 5).map((m) => {
+        const sign = m.quantity > 0 ? `+${m.quantity}` : `${m.quantity}`;
+        return {
+          id: m.id,
+          product: m.productName,
+          reference: m.reference,
+          warehouse: m.warehouseName,
+          type: m.type,
+          quantity: String(m.quantity).startsWith('+') || String(m.quantity).startsWith('-') ? String(m.quantity) : sign,
+          date: m.date || m.timestamp,
+        };
+      })
+    : MOCK_STOCK_MOVEMENTS;
   const columns = [
     {
       key: 'product',
@@ -75,7 +92,7 @@ export default function RecentStockMovements() {
 
       <DataTable
         columns={columns}
-        data={MOCK_STOCK_MOVEMENTS}
+        data={displayData}
         keyExtractor={(item) => item.id}
       />
     </div>

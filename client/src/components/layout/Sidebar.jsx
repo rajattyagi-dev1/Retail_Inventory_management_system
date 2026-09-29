@@ -14,12 +14,12 @@ import {
   Users,
   ShieldCheck,
   ClipboardList,
-  Settings,
   LogOut,
   ChevronLeft,
   ChevronRight,
   Database,
   History,
+  Bell,
 } from 'lucide-react';
 
 const NAVIGATION_GROUPS = [
@@ -47,15 +47,15 @@ const NAVIGATION_GROUPS = [
   {
     title: 'PROCUREMENT',
     items: [
-      { name: 'Suppliers', path: '/suppliers', icon: Truck },
-      { name: 'Purchase Orders', path: '/purchase-orders', icon: FileSpreadsheet },
+      { name: 'Suppliers', path: '/suppliers', icon: Truck, badge: '8' },
+      { name: 'Purchase Orders', path: '/purchase-orders', icon: FileSpreadsheet, badge: '12' },
     ],
   },
   {
     title: 'SALES',
     items: [
-      { name: 'Orders', path: '/orders', icon: ShoppingCart, badge: '42' },
-      { name: 'Fulfillment', path: '/fulfillment', icon: CheckCircle2 },
+      { name: 'Orders', path: '/orders', icon: ShoppingCart, badge: '16' },
+      { name: 'Fulfillment', path: '/orders/fulfillment', icon: CheckCircle2 },
     ],
   },
   {
@@ -65,17 +65,17 @@ const NAVIGATION_GROUPS = [
     ],
   },
   {
-    title: 'ADMINISTRATION',
+    title: 'SYSTEM',
     items: [
-      { name: 'Users', path: '/users', icon: Users },
-      { name: 'Roles', path: '/roles', icon: ShieldCheck },
-      { name: 'Audit Logs', path: '/audit-logs', icon: ClipboardList },
+      { name: 'Notifications', path: '/notifications', icon: Bell },
     ],
   },
   {
-    title: 'SYSTEM',
+    title: 'ADMINISTRATION',
     items: [
-      { name: 'Settings', path: '/settings', icon: Settings },
+      { name: 'Admin Console', path: '/admin', icon: ShieldCheck },
+      { name: 'Users', path: '/admin/users', icon: Users, badge: '8' },
+      { name: 'Audit Logs', path: '/admin/audit-logs', icon: ClipboardList },
     ],
   },
 ];

@@ -1,13 +1,25 @@
 import React from 'react';
 import { AlertTriangle, CheckCircle, Info, BellRing } from 'lucide-react';
 import SectionHeader from '../common/SectionHeader';
+import { useNotifications } from '../../hooks/useNotifications';
 import { MOCK_NOTIFICATIONS } from '../../utils/mockData';
 
 /**
  * System alert and notification stream widget.
  */
 export default function RecentNotifications() {
-  const unreadCount = MOCK_NOTIFICATIONS.filter((n) => n.unread).length;
+  const { notifications, unreadCount } = useNotifications();
+
+  const displayList = (notifications && notifications.length > 0)
+    ? notifications.slice(0, 5).map((n) => ({
+        id: n.id,
+        type: n.severity === 'CRITICAL' ? 'critical' : n.severity === 'WARNING' ? 'warning' : n.severity === 'SUCCESS' ? 'success' : 'info',
+        title: n.title,
+        message: n.message,
+        time: n.timestamp,
+        unread: !n.read,
+      }))
+    : MOCK_NOTIFICATIONS;
 
   return (
     <div className="card">
@@ -20,7 +32,7 @@ export default function RecentNotifications() {
       </div>
 
       <div className="notification-feed">
-        {MOCK_NOTIFICATIONS.map((item) => {
+        {displayList.map((item) => {
           let iconColor = '#2563eb';
           let bgColor = '#eff6ff';
           let IconComp = Info;

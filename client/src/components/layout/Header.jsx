@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useLocation, Link } from 'react-router-dom';
+import { useLocation, Link, useNavigate } from 'react-router-dom';
 import {
   Search,
   Bell,
@@ -12,8 +12,10 @@ import {
   CheckCircle,
   AlertTriangle,
   Info,
+  AlertCircle,
 } from 'lucide-react';
-import { MOCK_CURRENT_USER, MOCK_NOTIFICATIONS } from '../../utils/mockData';
+import { MOCK_CURRENT_USER } from '../../utils/mockData';
+import { useNotifications } from '../../hooks/useNotifications';
 
 const ROUTE_NAME_MAP = {
   '/': 'Dashboard Overview',
@@ -23,23 +25,24 @@ const ROUTE_NAME_MAP = {
   '/warehouses': 'Warehouse Locations',
   '/suppliers': 'Supplier Directory',
   '/purchase-orders': 'Purchase Orders',
-  '/procurement': 'Procurement Hub',
   '/orders': 'Sales Orders',
-  '/fulfillment': 'Order Fulfillment',
   '/reports': 'Analytics & Reports',
-  '/users': 'User Management',
-  '/roles': 'Roles & Permissions',
-  '/audit-logs': 'System Audit Logs',
-  '/administration': 'Administration',
+  '/notifications': 'System Notifications',
+  '/admin': 'Administration Console',
+  '/admin/users': 'User Management',
+  '/admin/audit-logs': 'System Audit Logs',
   '/settings': 'System Settings',
 };
 
 /**
  * Reusable enterprise Header component.
- * Includes breadcrumbs, global search, notification dropdown, and profile controls.
+ * Includes dynamic breadcrumbs, live notification dropdown, and profile controls.
  */
 export default function Header({ onOpenMobileMenu }) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
+
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
@@ -119,6 +122,75 @@ export default function Header({ onOpenMobileMenu }) {
     pageTitle = 'Inventory Allocation Details';
     breadcrumbTrail.push({ label: 'Inventory', path: '/inventory' });
     breadcrumbTrail.push({ label: 'SKU Allocation', path: location.pathname });
+  } else if (location.pathname === '/suppliers') {
+    pageTitle = 'Supplier Directory';
+    breadcrumbTrail.push({ label: 'Procurement', path: '/suppliers' });
+    breadcrumbTrail.push({ label: 'Suppliers', path: '/suppliers' });
+  } else if (location.pathname === '/suppliers/new') {
+    pageTitle = 'Onboard Supplier';
+    breadcrumbTrail.push({ label: 'Procurement', path: '/suppliers' });
+    breadcrumbTrail.push({ label: 'New Supplier', path: '/suppliers/new' });
+  } else if (location.pathname.startsWith('/suppliers/') && location.pathname.endsWith('/edit')) {
+    pageTitle = 'Edit Supplier';
+    breadcrumbTrail.push({ label: 'Procurement', path: '/suppliers' });
+    breadcrumbTrail.push({ label: 'Edit Supplier', path: location.pathname });
+  } else if (location.pathname.startsWith('/suppliers/')) {
+    pageTitle = 'Supplier Profile';
+    breadcrumbTrail.push({ label: 'Procurement', path: '/suppliers' });
+    breadcrumbTrail.push({ label: 'Profile', path: location.pathname });
+  } else if (location.pathname === '/purchase-orders') {
+    pageTitle = 'Purchase Orders';
+    breadcrumbTrail.push({ label: 'Procurement', path: '/purchase-orders' });
+    breadcrumbTrail.push({ label: 'Purchase Orders', path: '/purchase-orders' });
+  } else if (location.pathname === '/purchase-orders/new') {
+    pageTitle = 'Create Purchase Order';
+    breadcrumbTrail.push({ label: 'Procurement', path: '/purchase-orders' });
+    breadcrumbTrail.push({ label: 'Create PO', path: '/purchase-orders/new' });
+  } else if (location.pathname.startsWith('/purchase-orders/')) {
+    pageTitle = 'Purchase Order Details';
+    breadcrumbTrail.push({ label: 'Procurement', path: '/purchase-orders' });
+    breadcrumbTrail.push({ label: 'PO Details', path: location.pathname });
+  } else if (location.pathname === '/orders') {
+    pageTitle = 'Sales Orders';
+    breadcrumbTrail.push({ label: 'Sales', path: '/orders' });
+    breadcrumbTrail.push({ label: 'Orders', path: '/orders' });
+  } else if (location.pathname === '/orders/new') {
+    pageTitle = 'Create Sales Order';
+    breadcrumbTrail.push({ label: 'Sales', path: '/orders' });
+    breadcrumbTrail.push({ label: 'New Order', path: '/orders/new' });
+  } else if (location.pathname === '/orders/fulfillment') {
+    pageTitle = 'Fulfillment Board';
+    breadcrumbTrail.push({ label: 'Sales', path: '/orders' });
+    breadcrumbTrail.push({ label: 'Fulfillment Kanban', path: '/orders/fulfillment' });
+  } else if (location.pathname.startsWith('/orders/')) {
+    pageTitle = 'Customer Order Details';
+    breadcrumbTrail.push({ label: 'Sales', path: '/orders' });
+    breadcrumbTrail.push({ label: 'Order Details', path: location.pathname });
+  } else if (location.pathname === '/reports') {
+    pageTitle = 'Reports & Analytics';
+    breadcrumbTrail.push({ label: 'Reports', path: '/reports' });
+  } else if (location.pathname === '/notifications') {
+    pageTitle = 'System Notifications';
+    breadcrumbTrail.push({ label: 'System', path: '/notifications' });
+  } else if (location.pathname === '/admin') {
+    pageTitle = 'Administration Console';
+    breadcrumbTrail.push({ label: 'Administration', path: '/admin' });
+  } else if (location.pathname === '/admin/users') {
+    pageTitle = 'User Management';
+    breadcrumbTrail.push({ label: 'Administration', path: '/admin' });
+    breadcrumbTrail.push({ label: 'Users', path: '/admin/users' });
+  } else if (location.pathname === '/admin/users/new') {
+    pageTitle = 'Create User Account';
+    breadcrumbTrail.push({ label: 'Administration', path: '/admin' });
+    breadcrumbTrail.push({ label: 'New User', path: '/admin/users/new' });
+  } else if (location.pathname.startsWith('/admin/users/') && location.pathname.endsWith('/edit')) {
+    pageTitle = 'Edit User Account';
+    breadcrumbTrail.push({ label: 'Administration', path: '/admin' });
+    breadcrumbTrail.push({ label: 'Edit User', path: location.pathname });
+  } else if (location.pathname === '/admin/audit-logs') {
+    pageTitle = 'System Audit Logs';
+    breadcrumbTrail.push({ label: 'Administration', path: '/admin' });
+    breadcrumbTrail.push({ label: 'Audit Logs', path: '/admin/audit-logs' });
   } else {
     pageTitle = ROUTE_NAME_MAP[location.pathname] || 'Console';
     const pathSegment = location.pathname.substring(1).replace('-', ' ');
@@ -126,7 +198,15 @@ export default function Header({ onOpenMobileMenu }) {
     breadcrumbTrail.push({ label: capitalized, path: location.pathname });
   }
 
-  const unreadCount = MOCK_NOTIFICATIONS.filter((n) => n.unread).length;
+  const handleNotificationClick = (notif) => {
+    if (!notif.read) {
+      markAsRead(notif.id);
+    }
+    setShowNotifications(false);
+    if (notif.relatedId) {
+      navigate(notif.relatedId);
+    }
+  };
 
   return (
     <header className="app-header">
@@ -169,7 +249,7 @@ export default function Header({ onOpenMobileMenu }) {
             className="search-input"
             placeholder="Search products, SKUs, warehouses, orders..."
             readOnly
-            title="Global search placeholder (Phase 2A)"
+            title="Global search placeholder (Ctrl K)"
           />
           <kbd className="search-shortcut-badge">Ctrl K</kbd>
         </div>
@@ -194,25 +274,47 @@ export default function Header({ onOpenMobileMenu }) {
             <div className="dropdown-menu dropdown-notifications" role="dialog">
               <div className="dropdown-header">
                 <span>System Notifications</span>
-                <span className="nav-badge-pill" style={{ color: '#2563eb', background: '#eff6ff' }}>
-                  {unreadCount} new
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {unreadCount > 0 && (
+                    <button
+                      type="button"
+                      style={{ fontSize: '11px', color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                      onClick={markAllAsRead}
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                  <span className="nav-badge-pill" style={{ color: '#2563eb', background: '#eff6ff' }}>
+                    {unreadCount} unread
+                  </span>
+                </div>
               </div>
+
               <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
-                {MOCK_NOTIFICATIONS.map((n) => (
-                  <div key={n.id} className="notification-feed-item">
+                {notifications.slice(0, 6).map((n) => (
+                  <div
+                    key={n.id}
+                    className="notification-feed-item"
+                    style={{
+                      backgroundColor: n.read ? '#ffffff' : '#f8fafc',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => handleNotificationClick(n)}
+                  >
                     <div
                       className="notification-icon-wrap"
                       style={{
                         backgroundColor:
-                          n.type === 'critical' ? '#fef2f2' : n.type === 'success' ? '#ecfdf5' : '#eff6ff',
+                          n.severity === 'CRITICAL' ? '#fef2f2' : n.severity === 'SUCCESS' ? '#ecfdf5' : n.severity === 'WARNING' ? '#fffbeb' : '#eff6ff',
                         color:
-                          n.type === 'critical' ? '#ef4444' : n.type === 'success' ? '#10b981' : '#3b82f6',
+                          n.severity === 'CRITICAL' ? '#ef4444' : n.severity === 'SUCCESS' ? '#10b981' : n.severity === 'WARNING' ? '#d97706' : '#3b82f6',
                       }}
                     >
-                      {n.type === 'critical' ? (
+                      {n.severity === 'CRITICAL' ? (
+                        <AlertCircle size={15} />
+                      ) : n.severity === 'WARNING' ? (
                         <AlertTriangle size={15} />
-                      ) : n.type === 'success' ? (
+                      ) : n.severity === 'SUCCESS' ? (
                         <CheckCircle size={15} />
                       ) : (
                         <Info size={15} />
@@ -220,13 +322,25 @@ export default function Header({ onOpenMobileMenu }) {
                     </div>
                     <div className="notification-content">
                       <div className="notification-title-line">
-                        <span className="notification-title">{n.title}</span>
-                        <span className="notification-time">{n.time}</span>
+                        <span className="notification-title" style={{ fontWeight: n.read ? 600 : 700 }}>
+                          {n.title}
+                        </span>
+                        <span className="notification-time">{n.timestamp}</span>
                       </div>
                       <p className="notification-message">{n.message}</p>
                     </div>
                   </div>
                 ))}
+              </div>
+
+              <div style={{ padding: '8px 12px', borderTop: '1px solid #f1f5f9', textAlign: 'center' }}>
+                <Link
+                  to="/notifications"
+                  style={{ fontSize: '12px', fontWeight: 600, color: '#2563eb' }}
+                  onClick={() => setShowNotifications(false)}
+                >
+                  View All Notifications &rarr;
+                </Link>
               </div>
             </div>
           )}
@@ -255,18 +369,33 @@ export default function Header({ onOpenMobileMenu }) {
                 <div style={{ fontSize: 11, color: '#64748b' }}>{MOCK_CURRENT_USER.email}</div>
               </div>
 
-              <div className="dropdown-item" role="menuitem" onClick={() => setShowProfileMenu(false)}>
+              <Link
+                to="/admin/users"
+                className="dropdown-item"
+                role="menuitem"
+                onClick={() => setShowProfileMenu(false)}
+              >
                 <User size={15} />
                 <span>My Profile</span>
-              </div>
-              <div className="dropdown-item" role="menuitem" onClick={() => setShowProfileMenu(false)}>
+              </Link>
+              <Link
+                to="/admin"
+                className="dropdown-item"
+                role="menuitem"
+                onClick={() => setShowProfileMenu(false)}
+              >
                 <Shield size={15} />
-                <span>Security & Roles</span>
-              </div>
-              <div className="dropdown-item" role="menuitem" onClick={() => setShowProfileMenu(false)}>
+                <span>Admin Console</span>
+              </Link>
+              <Link
+                to="/admin/audit-logs"
+                className="dropdown-item"
+                role="menuitem"
+                onClick={() => setShowProfileMenu(false)}
+              >
                 <Settings size={15} />
-                <span>Preferences</span>
-              </div>
+                <span>Audit Logs</span>
+              </Link>
 
               <div className="dropdown-divider" />
 
