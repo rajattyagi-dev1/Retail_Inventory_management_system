@@ -259,7 +259,7 @@ const getOrderById = async (id) => {
  * Create a new customer order with line items.
  * If status is CONFIRMED, atomically verifies stock availability and locks reservedStock.
  */
-const createOrder = async (data) => {
+const createOrder = async (data, actorUser = null) => {
   if (!data || typeof data !== 'object') {
     throw ApiError.badRequest('Request body must be an object');
   }
@@ -504,6 +504,9 @@ const createOrder = async (data) => {
       entityId: formatted.id,
       description: `Created customer order ${formatted.orderNumber} for customer "${formatted.customerName}" totaling ${formatted.totalAmount}`,
       severity: 'INFO',
+      userId: actorUser?.id || null,
+      userName: actorUser?.name || null,
+      userRole: actorUser?.role || null,
     });
   } catch (err) {
     console.error('Failed to log order create audit:', err.message);
@@ -517,7 +520,7 @@ const createOrder = async (data) => {
  * Transitions order status PENDING -> CONFIRMED.
  * Atomically verifies stock and locks reservedStock across all order items.
  */
-const reserveStockForOrder = async (id) => {
+const reserveStockForOrder = async (id, actorUser = null) => {
   if (!id || typeof id !== 'string') {
     throw ApiError.badRequest('Order ID is required');
   }
@@ -610,6 +613,9 @@ const reserveStockForOrder = async (id) => {
       entityId: formatted.id,
       description: `Reserved stock and confirmed customer order ${formatted.orderNumber}`,
       severity: 'INFO',
+      userId: actorUser?.id || null,
+      userName: actorUser?.name || null,
+      userRole: actorUser?.role || null,
     });
 
     await notificationService.createNotification({
@@ -664,7 +670,7 @@ const validateStatusTransition = (currentStatus, newStatus) => {
  * - -> DELIVERED: Marks delivery completed without duplicate inventory deduction.
  * - -> CANCELLED: Releases reservedStock back to available stock if order was reserved before shipping.
  */
-const updateOrderStatus = async (id, status, reason = '', metadata = {}) => {
+const updateOrderStatus = async (id, status, reason = '', metadata = {}, actorUser = null) => {
   if (!id || typeof id !== 'string') {
     throw ApiError.badRequest('Order ID is required');
   }
@@ -870,6 +876,9 @@ const updateOrderStatus = async (id, status, reason = '', metadata = {}) => {
       entityId: formatted.id,
       description: `Order ${formatted.orderNumber} status changed from ${previousStatus} to ${normalizedStatus}${reason ? ` (${reason})` : ''}`,
       severity: isCancelled ? 'WARNING' : 'INFO',
+      userId: actorUser?.id || null,
+      userName: actorUser?.name || null,
+      userRole: actorUser?.role || null,
     });
 
     if (['CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED'].includes(normalizedStatus)) {
@@ -909,8 +918,8 @@ const updateOrderStatus = async (id, status, reason = '', metadata = {}) => {
 /**
  * Cancel an order. Convenience wrapper around updateOrderStatus('CANCELLED').
  */
-const cancelOrder = async (id, reason = 'Customer requested cancellation') => {
-  return await updateOrderStatus(id, 'CANCELLED', reason);
+const cancelOrder = async (id, reason = 'Customer requested cancellation', actorUser = null) => {
+  return await updateOrderStatus(id, 'CANCELLED', reason, {}, actorUser);
 };
 
 module.exports = {

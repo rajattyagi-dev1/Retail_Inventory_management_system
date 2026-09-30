@@ -1,10 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
+const { authenticateToken } = require('../middleware/authMiddleware');
+const { authorizeRoles } = require('../middleware/rbacMiddleware');
 
 /**
  * User Management Routes
+ * Protected: Requires authentication and ADMIN role.
  */
+
+router.use(authenticateToken);
+router.use(authorizeRoles('ADMIN'));
 
 router.get('/', userController.getUsers);
 router.get('/roles', userController.getRoles);

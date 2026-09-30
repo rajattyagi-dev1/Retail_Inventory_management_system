@@ -54,7 +54,7 @@ const getUser = async (req, res, next) => {
 
 const createUser = async (req, res, next) => {
   try {
-    const user = await userService.createUser(req.body);
+    const user = await userService.createUser(req.body, req.user);
     return res.status(201).json({
       success: true,
       message: 'User created successfully',
@@ -68,7 +68,7 @@ const createUser = async (req, res, next) => {
 const updateUser = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const user = await userService.updateUser(id, req.body);
+    const user = await userService.updateUser(id, req.body, req.user);
     return res.status(200).json({
       success: true,
       message: 'User updated successfully',
@@ -83,7 +83,7 @@ const updateUserStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const user = await userService.updateUserStatus(id, status);
+    const user = await userService.updateUserStatus(id, status, req.user);
     return res.status(200).json({
       success: true,
       message: 'User status updated successfully',

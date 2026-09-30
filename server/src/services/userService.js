@@ -1,6 +1,7 @@
 const prisma = require('../config/prisma');
 const ApiError = require('../utils/apiError');
 const auditLogService = require('./auditLogService');
+const { hashPassword } = require('./authService');
 
 const VALID_USER_STATUSES = ['ACTIVE', 'INACTIVE', 'SUSPENDED'];
 const VALID_ROLE_NAMES = [
@@ -169,12 +170,12 @@ const getUserById = async (id) => {
 /**
  * Create a new user.
  */
-const createUser = async (data) => {
+const createUser = async (data, actorUser = null) => {
   if (!data || typeof data !== 'object') {
     throw ApiError.badRequest('Request body must be an object');
   }
 
-  const { name, email, department, role, roleId, status = 'ACTIVE' } = data;
+  const { name, email, department, role, roleId, status = 'ACTIVE', password } = data;
 
   if (!name || typeof name !== 'string' || !name.trim()) {
     throw ApiError.badRequest('User full name is required');
@@ -212,10 +213,18 @@ const createUser = async (data) => {
     }
   }
 
+  // Hash password (use provided or safe dev default)
+  const passToHash =
+    password && typeof password === 'string' && password.trim()
+      ? password.trim()
+      : 'Password123!';
+  const passwordHash = await hashPassword(passToHash);
+
   const newUser = await prisma.user.create({
     data: {
       name: name.trim(),
       email: cleanEmail,
+      passwordHash,
       department: department && typeof department === 'string' ? department.trim() : null,
       roleId: resolvedRole.id,
       status: normalizedStatus,
@@ -229,6 +238,9 @@ const createUser = async (data) => {
     module: 'USER',
     entity: 'User',
     entityId: newUser.id,
+    userId: actorUser?.id || null,
+    userName: actorUser?.name || null,
+    userRole: actorUser?.role || null,
     description: `Created new user account "${newUser.name}" (${newUser.email}) with role ${resolvedRole.name}`,
     severity: 'INFO',
   });
@@ -239,7 +251,7 @@ const createUser = async (data) => {
 /**
  * Update an existing user.
  */
-const updateUser = async (id, data) => {
+const updateUser = async (id, data, actorUser = null) => {
   if (!id || typeof id !== 'string') {
     throw ApiError.badRequest('User ID is required');
   }
@@ -254,7 +266,7 @@ const updateUser = async (id, data) => {
     throw ApiError.notFound('User not found');
   }
 
-  const { name, email, department, role, roleId, status } = data;
+  const { name, email, department, role, roleId, status, password } = data;
   const updateData = {};
 
   if (name !== undefined) {
@@ -282,6 +294,13 @@ const updateUser = async (id, data) => {
       }
       updateData.email = cleanEmail;
     }
+  }
+
+  if (password !== undefined) {
+    if (typeof password !== 'string' || !password.trim()) {
+      throw ApiError.badRequest('Password cannot be empty');
+    }
+    updateData.passwordHash = await hashPassword(password.trim());
   }
 
   if (department !== undefined) {
@@ -315,6 +334,9 @@ const updateUser = async (id, data) => {
     module: 'USER',
     entity: 'User',
     entityId: updatedUser.id,
+    userId: actorUser?.id || null,
+    userName: actorUser?.name || null,
+    userRole: actorUser?.role || null,
     description: `Updated profile details for user "${updatedUser.name}" (${updatedUser.email})`,
     severity: 'INFO',
   });
@@ -325,7 +347,7 @@ const updateUser = async (id, data) => {
 /**
  * Update user status (ACTIVE / INACTIVE / SUSPENDED).
  */
-const updateUserStatus = async (id, status) => {
+const updateUserStatus = async (id, status, actorUser = null) => {
   if (!id || typeof id !== 'string') {
     throw ApiError.badRequest('User ID is required');
   }
@@ -363,6 +385,9 @@ const updateUserStatus = async (id, status) => {
     module: 'USER',
     entity: 'User',
     entityId: updated.id,
+    userId: actorUser?.id || null,
+    userName: actorUser?.name || null,
+    userRole: actorUser?.role || null,
     description: `Changed user status for "${updated.name}" from ${existing.status} to ${normalizedStatus}`,
     severity: normalizedStatus === 'SUSPENDED' ? 'WARNING' : 'INFO',
   });

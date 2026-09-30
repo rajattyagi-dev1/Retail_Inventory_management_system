@@ -354,7 +354,7 @@ const adjustStock = async ({
   notes,
   performedBy,
   performedById,
-}) => {
+}, actorUser = null) => {
   // Validate adjustment type
   if (!type || typeof type !== 'string') {
     throw ApiError.badRequest('Adjustment type is required (ADD, REMOVE, or SET)');
@@ -598,6 +598,10 @@ const adjustStock = async ({
       result.inventory.currentStock <= result.inventory.reorderLevel;
     const severity = isOutOfStock ? 'CRITICAL' : isLowStock ? 'WARNING' : 'INFO';
 
+    const actorId = actorUser?.id || performedById || null;
+    const actorName = actorUser?.name || performedBy || null;
+    const actorRole = actorUser?.role || null;
+
     await auditLogService.logEvent({
       action: 'STOCK_ADJUSTMENT',
       module: 'INVENTORY',
@@ -605,8 +609,9 @@ const adjustStock = async ({
       entityId: result.inventory.id,
       description: `Stock adjusted for product "${result.inventory.productName || 'Product'}" at warehouse "${result.inventory.warehouseName || 'Warehouse'}". Adjusted by ${result.movement.quantity}. Current stock is now ${result.inventory.currentStock}.`,
       severity,
-      userId: performedById || null,
-      userName: performedBy || null,
+      userId: actorId,
+      userName: actorName,
+      userRole: actorRole,
     });
   } catch (err) {
     console.error('Failed to log stock adjustment audit:', err.message);

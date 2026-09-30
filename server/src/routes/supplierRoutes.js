@@ -1,12 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const supplierController = require('../controllers/supplierController');
+const { authenticateToken } = require('../middleware/authMiddleware');
+const { authorizeRoles } = require('../middleware/rbacMiddleware');
 
 /**
  * Supplier Routes
- * Maps endpoints to controller handlers.
- * No business logic or Prisma queries here.
+ * Protected: Requires authentication and PROCUREMENT_MANAGER or ADMIN role.
  */
+
+router.use(authenticateToken);
+router.use(authorizeRoles('PROCUREMENT_MANAGER'));
 
 // Supplier CRUD & status
 router.get('/', supplierController.getSuppliers);

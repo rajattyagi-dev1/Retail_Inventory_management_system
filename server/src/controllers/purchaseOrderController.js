@@ -44,7 +44,14 @@ const getPurchaseOrder = async (req, res, next) => {
 
 const createPurchaseOrder = async (req, res, next) => {
   try {
-    const po = await purchaseOrderService.createPurchaseOrder(req.body);
+    const payload = {
+      ...req.body,
+      ...(req.user && {
+        createdById: req.user.id,
+        createdBy: req.user.name,
+      }),
+    };
+    const po = await purchaseOrderService.createPurchaseOrder(payload, req.user);
     return res.status(201).json({
       success: true,
       message: 'Purchase order created successfully',
@@ -58,7 +65,7 @@ const createPurchaseOrder = async (req, res, next) => {
 const updatePurchaseOrder = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const po = await purchaseOrderService.updatePurchaseOrder(id, req.body);
+    const po = await purchaseOrderService.updatePurchaseOrder(id, req.body, req.user);
     return res.status(200).json({
       success: true,
       message: 'Purchase order updated successfully',
@@ -73,7 +80,7 @@ const updatePurchaseOrderStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const po = await purchaseOrderService.updatePurchaseOrderStatus(id, status);
+    const po = await purchaseOrderService.updatePurchaseOrderStatus(id, status, req.user);
     return res.status(200).json({
       success: true,
       message: 'Purchase order status updated successfully',
@@ -87,7 +94,7 @@ const updatePurchaseOrderStatus = async (req, res, next) => {
 const approvePurchaseOrder = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const po = await purchaseOrderService.approvePurchaseOrder(id);
+    const po = await purchaseOrderService.approvePurchaseOrder(id, req.user);
     return res.status(200).json({
       success: true,
       message: 'Purchase order approved successfully',
@@ -101,7 +108,7 @@ const approvePurchaseOrder = async (req, res, next) => {
 const receiveGoods = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const result = await purchaseOrderService.receiveGoods(id, req.body);
+    const result = await purchaseOrderService.receiveGoods(id, req.body, req.user);
     return res.status(200).json({
       success: true,
       message: result.message,

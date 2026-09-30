@@ -269,7 +269,7 @@ const getPurchaseOrderById = async (id) => {
 /**
  * Create a new purchase order with line items in an atomic transaction.
  */
-const createPurchaseOrder = async (data) => {
+const createPurchaseOrder = async (data, actorUser = null) => {
   if (!data || typeof data !== 'object') {
     throw ApiError.badRequest('Request body must be an object');
   }
@@ -453,8 +453,9 @@ const createPurchaseOrder = async (data) => {
       entityId: formatted.id,
       description: `Created purchase order ${formatted.poNumber} for supplier "${formatted.supplierName}" totaling ${formatted.total}`,
       severity: 'INFO',
-      userId: formatted.createdById || null,
-      userName: formatted.createdBy || null,
+      userId: actorUser?.id || formatted.createdById || null,
+      userName: actorUser?.name || formatted.createdBy || null,
+      userRole: actorUser?.role || null,
     });
   } catch (err) {
     console.error('Failed to log PO create audit:', err.message);
@@ -566,7 +567,7 @@ const validateStatusTransition = (currentStatus, newStatus) => {
 /**
  * Change status of a purchase order with transition validation.
  */
-const updatePurchaseOrderStatus = async (id, status) => {
+const updatePurchaseOrderStatus = async (id, status, actorUser = null) => {
   if (!id || typeof id !== 'string') {
     throw ApiError.badRequest('Purchase order ID is required');
   }
@@ -624,6 +625,9 @@ const updatePurchaseOrderStatus = async (id, status) => {
       entityId: formatted.id,
       description: `Purchase order ${formatted.poNumber} status updated to ${formatted.status}`,
       severity: formatted.status === 'CANCELLED' ? 'WARNING' : 'INFO',
+      userId: actorUser?.id || null,
+      userName: actorUser?.name || null,
+      userRole: actorUser?.role || null,
     });
 
     if (formatted.status === 'CANCELLED') {
@@ -645,7 +649,7 @@ const updatePurchaseOrderStatus = async (id, status) => {
 /**
  * Approve a purchase order (workflow action: PENDING -> APPROVED).
  */
-const approvePurchaseOrder = async (id) => {
+const approvePurchaseOrder = async (id, actorUser = null) => {
   if (!id || typeof id !== 'string') {
     throw ApiError.badRequest('Purchase order ID is required');
   }
@@ -699,6 +703,9 @@ const approvePurchaseOrder = async (id) => {
       entityId: formatted.id,
       description: `Approved purchase order ${formatted.poNumber} for warehouse "${formatted.warehouseName}"`,
       severity: 'INFO',
+      userId: actorUser?.id || null,
+      userName: actorUser?.name || null,
+      userRole: actorUser?.role || null,
     });
 
     await notificationService.createNotification({
@@ -728,7 +735,7 @@ const approvePurchaseOrder = async (id) => {
  *
  * All operations run inside ONE Prisma transaction.
  */
-const receiveGoods = async (id, payload = {}) => {
+const receiveGoods = async (id, payload = {}, actorUser = null) => {
   if (!id || typeof id !== 'string') {
     throw ApiError.badRequest('Purchase order ID is required');
   }
@@ -973,6 +980,9 @@ const receiveGoods = async (id, payload = {}) => {
       entityId: formattedPO.id,
       description: `Received ${totalReceivingUnits} units for PO ${formattedPO.poNumber}. Status is now ${finalStatus}`,
       severity: 'INFO',
+      userId: actorUser?.id || null,
+      userName: actorUser?.name || null,
+      userRole: actorUser?.role || null,
     });
 
     await notificationService.createNotification({

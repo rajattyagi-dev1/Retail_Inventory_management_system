@@ -120,7 +120,14 @@ const getProductInventory = async (req, res, next) => {
 
 const adjustStock = async (req, res, next) => {
   try {
-    const result = await inventoryService.adjustStock(req.body);
+    const payload = {
+      ...req.body,
+      ...(req.user && {
+        performedById: req.user.id,
+        performedBy: req.user.name,
+      }),
+    };
+    const result = await inventoryService.adjustStock(payload, req.user);
 
     return res.status(200).json({
       success: true,

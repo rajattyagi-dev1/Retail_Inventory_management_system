@@ -44,7 +44,7 @@ const getOrder = async (req, res, next) => {
 
 const createOrder = async (req, res, next) => {
   try {
-    const order = await orderService.createOrder(req.body);
+    const order = await orderService.createOrder(req.body, req.user);
     return res.status(201).json({
       success: true,
       message: 'Order created successfully',
@@ -58,7 +58,7 @@ const createOrder = async (req, res, next) => {
 const reserveStock = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const order = await orderService.reserveStockForOrder(id);
+    const order = await orderService.reserveStockForOrder(id, req.user);
     return res.status(200).json({
       success: true,
       message: 'Stock reserved and order confirmed successfully',
@@ -73,11 +73,17 @@ const updateOrderStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status, reason, notes, performedBy, performedById } = req.body;
-    const order = await orderService.updateOrderStatus(id, status, reason, {
-      notes,
-      performedBy,
-      performedById,
-    });
+    const order = await orderService.updateOrderStatus(
+      id,
+      status,
+      reason,
+      {
+        notes,
+        performedBy: performedBy || req.user?.name || 'Dispatch Coordinator',
+        performedById: req.user?.id || performedById,
+      },
+      req.user
+    );
     return res.status(200).json({
       success: true,
       message: `Order status updated to ${status} successfully`,
@@ -92,7 +98,7 @@ const cancelOrder = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
-    const order = await orderService.cancelOrder(id, reason);
+    const order = await orderService.cancelOrder(id, reason, req.user);
     return res.status(200).json({
       success: true,
       message: 'Order cancelled successfully and reserved stock released',

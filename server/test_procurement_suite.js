@@ -20,10 +20,17 @@ async function runProcurementTests() {
     }
   }
 
+  let adminToken = null;
+
   async function request(path, options = {}) {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
+      ...(options.headers || {}),
+    };
     const res = await fetch(`${BASE_URL}${path}`, {
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
       ...options,
+      headers,
     });
     let body;
     try {
@@ -35,6 +42,19 @@ async function runProcurementTests() {
   }
 
   try {
+    const { seedDefaultUsers, generateToken } = require('./src/services/authService');
+    await seedDefaultUsers();
+    const adminUser = await prisma.user.findUnique({
+      where: { email: 'admin@retailflow.com' },
+      include: { role: true },
+    });
+    if (adminUser) {
+      adminToken = generateToken({
+        userId: adminUser.id,
+        email: adminUser.email,
+        role: adminUser.role.name,
+      });
+    }
     // ==========================================
     // 0. HEALTH CHECK & BASELINES
     // ==========================================
