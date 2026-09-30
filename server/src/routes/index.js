@@ -7,6 +7,8 @@ const productRoutes = require('./productRoutes');
 const warehouseRoutes = require('./warehouseRoutes');
 const inventoryRoutes = require('./inventoryRoutes');
 const stockMovementRoutes = require('./stockMovementRoutes');
+const supplierRoutes = require('./supplierRoutes');
+const purchaseOrderRoutes = require('./purchaseOrderRoutes');
 
 // Mount module routes
 router.use('/health', healthRoutes);
@@ -15,6 +17,8 @@ router.use('/products', productRoutes);
 router.use('/warehouses', warehouseRoutes);
 router.use('/inventory', inventoryRoutes);
 router.use('/stock-movements', stockMovementRoutes);
+router.use('/suppliers', supplierRoutes);
+router.use('/purchase-orders', purchaseOrderRoutes);
 
 module.exports = router;
 

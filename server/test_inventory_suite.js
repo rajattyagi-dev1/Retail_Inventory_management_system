@@ -67,6 +67,18 @@ async function runTests() {
     // D. STOCK ADJUSTMENT (INITIAL SETUP + ADD / REMOVE / SET)
     console.log('--- TEST GROUP D: STOCK ADJUSTMENTS & ATOMIC TRANSACTIONS ---');
     
+    // Reset Product1 at Warehouse1 to 0 before initial test to ensure idempotency across multiple runs
+    await request('/inventory/adjust', {
+      method: 'POST',
+      body: JSON.stringify({
+        productId: testProduct1.id,
+        warehouseId: testWarehouse1.id,
+        type: 'SET',
+        quantity: 0,
+        reason: 'Test setup baseline reset',
+      }),
+    });
+
     // Initial ADD for Product1 at Warehouse1
     console.log('1. Initial stock adjustment: ADD 50 units');
     const adjInit = await request('/inventory/adjust', {
