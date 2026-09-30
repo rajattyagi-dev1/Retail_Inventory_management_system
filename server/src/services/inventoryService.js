@@ -1,5 +1,7 @@
 const prisma = require('../config/prisma');
 const ApiError = require('../utils/apiError');
+const auditLogService = require('./auditLogService');
+const notificationService = require('./notificationService');
 
 const VALID_STOCK_STATUSES = ['IN_STOCK', 'LOW_STOCK', 'OUT_OF_STOCK'];
 const ALLOWED_SORT_FIELDS = [
@@ -398,8 +400,10 @@ const adjustStock = async ({
     throw ApiError.badRequest('Either inventoryId or both productId and warehouseId are required');
   }
 
+  let previousStock = 0;
+
   // Execute atomic transaction
-  return await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     let targetInventory = null;
 
     if (hasInventoryId) {
@@ -414,6 +418,7 @@ const adjustStock = async ({
       if (!targetInventory) {
         throw ApiError.notFound('Inventory record not found');
       }
+      previousStock = targetInventory.currentStock;
     } else {
       const cleanProductId = productId.trim();
       const cleanWarehouseId = warehouseId.trim();
@@ -515,6 +520,7 @@ const adjustStock = async ({
 
     // Existing inventory record adjustment
     const currentStock = targetInventory.currentStock;
+    previousStock = currentStock;
     let newStock = currentStock;
     let diff = 0;
 
@@ -583,6 +589,36 @@ const adjustStock = async ({
       movement: formatStockMovement(movement),
     };
   });
+
+  // Non-blocking audit & notification triggers
+  try {
+    const isOutOfStock = result.inventory.currentStock === 0;
+    const isLowStock =
+      result.inventory.currentStock > 0 &&
+      result.inventory.currentStock <= result.inventory.reorderLevel;
+    const severity = isOutOfStock ? 'CRITICAL' : isLowStock ? 'WARNING' : 'INFO';
+
+    await auditLogService.logEvent({
+      action: 'STOCK_ADJUSTMENT',
+      module: 'INVENTORY',
+      entity: 'Inventory',
+      entityId: result.inventory.id,
+      description: `Stock adjusted for product "${result.inventory.productName || 'Product'}" at warehouse "${result.inventory.warehouseName || 'Warehouse'}". Adjusted by ${result.movement.quantity}. Current stock is now ${result.inventory.currentStock}.`,
+      severity,
+      userId: performedById || null,
+      userName: performedBy || null,
+    });
+  } catch (err) {
+    console.error('Failed to log stock adjustment audit:', err.message);
+  }
+
+  try {
+    await notificationService.notifyInventoryThreshold(result.inventory, previousStock);
+  } catch (err) {
+    console.error('Failed to trigger inventory notification:', err.message);
+  }
+
+  return result;
 };
 
 module.exports = {

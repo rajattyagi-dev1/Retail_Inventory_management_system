@@ -10,6 +10,11 @@ const stockMovementRoutes = require('./stockMovementRoutes');
 const supplierRoutes = require('./supplierRoutes');
 const purchaseOrderRoutes = require('./purchaseOrderRoutes');
 const orderRoutes = require('./orderRoutes');
+const reportRoutes = require('./reportRoutes');
+const notificationRoutes = require('./notificationRoutes');
+const userRoutes = require('./userRoutes');
+const auditLogRoutes = require('./auditLogRoutes');
+const adminRoutes = require('./adminRoutes');
 
 // Mount module routes
 router.use('/health', healthRoutes);
@@ -21,6 +26,11 @@ router.use('/stock-movements', stockMovementRoutes);
 router.use('/suppliers', supplierRoutes);
 router.use('/purchase-orders', purchaseOrderRoutes);
 router.use('/orders', orderRoutes);
+router.use('/reports', reportRoutes);
+router.use('/notifications', notificationRoutes);
+router.use('/users', userRoutes);
+router.use('/audit-logs', auditLogRoutes);
+router.use('/admin', adminRoutes);
 
 module.exports = router;
 

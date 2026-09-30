@@ -1,5 +1,7 @@
 const prisma = require('../config/prisma');
 const ApiError = require('../utils/apiError');
+const auditLogService = require('./auditLogService');
+const notificationService = require('./notificationService');
 
 const VALID_ORDER_STATUSES = [
   'PENDING',
@@ -493,7 +495,21 @@ const createOrder = async (data) => {
     return order;
   });
 
-  return formatOrder(createdOrder);
+  const formatted = formatOrder(createdOrder);
+  try {
+    await auditLogService.logEvent({
+      action: 'CREATE',
+      module: 'ORDER',
+      entity: 'Order',
+      entityId: formatted.id,
+      description: `Created customer order ${formatted.orderNumber} for customer "${formatted.customerName}" totaling ${formatted.totalAmount}`,
+      severity: 'INFO',
+    });
+  } catch (err) {
+    console.error('Failed to log order create audit:', err.message);
+  }
+
+  return formatted;
 };
 
 /**
@@ -585,7 +601,29 @@ const reserveStockForOrder = async (id) => {
     return updated;
   });
 
-  return formatOrder(updatedOrder);
+  const formatted = formatOrder(updatedOrder);
+  try {
+    await auditLogService.logEvent({
+      action: 'STATUS_CHANGE',
+      module: 'ORDER',
+      entity: 'Order',
+      entityId: formatted.id,
+      description: `Reserved stock and confirmed customer order ${formatted.orderNumber}`,
+      severity: 'INFO',
+    });
+
+    await notificationService.createNotification({
+      type: 'ORDER',
+      title: `Order Confirmed: ${formatted.orderNumber}`,
+      message: `Stock reserved and order ${formatted.orderNumber} confirmed for ${formatted.customerName}.`,
+      severity: 'INFO',
+      relatedId: formatted.id,
+    });
+  } catch (err) {
+    console.error('Failed to log order reserve audit/notification:', err.message);
+  }
+
+  return formatted;
 };
 
 /**
@@ -819,7 +857,53 @@ const updateOrderStatus = async (id, status, reason = '', metadata = {}) => {
     return updated;
   });
 
-  return formatOrder(updatedOrder);
+  const formatted = formatOrder(updatedOrder);
+  try {
+    const isCancelled = normalizedStatus === 'CANCELLED';
+    const isDelivered = normalizedStatus === 'DELIVERED';
+    const isShipped = normalizedStatus === 'SHIPPED';
+
+    await auditLogService.logEvent({
+      action: isCancelled ? 'STATUS_CHANGE' : (normalizedStatus === 'DELIVERED' ? 'STATUS_CHANGE' : 'STATUS_CHANGE'),
+      module: 'ORDER',
+      entity: 'Order',
+      entityId: formatted.id,
+      description: `Order ${formatted.orderNumber} status changed from ${previousStatus} to ${normalizedStatus}${reason ? ` (${reason})` : ''}`,
+      severity: isCancelled ? 'WARNING' : 'INFO',
+    });
+
+    if (['CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED'].includes(normalizedStatus)) {
+      await notificationService.createNotification({
+        type: 'ORDER',
+        title: `Order ${normalizedStatus}: ${formatted.orderNumber}`,
+        message: `Order ${formatted.orderNumber} for ${formatted.customerName} has transitioned to ${normalizedStatus}.`,
+        severity: isCancelled ? 'WARNING' : isDelivered ? 'SUCCESS' : 'INFO',
+        relatedId: formatted.id,
+      });
+    }
+
+    // If shipped, inspect inventory items to check for low/out-of-stock transitions
+    if (isShipped && order.items && order.items.length > 0) {
+      for (const it of order.items) {
+        const inv = await prisma.inventory.findUnique({
+          where: {
+            unique_product_warehouse_inventory: {
+              productId: it.productId,
+              warehouseId: order.warehouseId,
+            },
+          },
+          include: { product: true, warehouse: true },
+        });
+        if (inv) {
+          await notificationService.notifyInventoryThreshold(inv, inv.currentStock + it.quantity);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to log order update audit/notification:', err.message);
+  }
+
+  return formatted;
 };
 
 /**

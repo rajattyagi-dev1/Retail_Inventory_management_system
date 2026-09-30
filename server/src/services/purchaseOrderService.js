@@ -1,5 +1,7 @@
 const prisma = require('../config/prisma');
 const ApiError = require('../utils/apiError');
+const auditLogService = require('./auditLogService');
+const notificationService = require('./notificationService');
 
 const VALID_PO_STATUSES = [
   'DRAFT',
@@ -442,7 +444,23 @@ const createPurchaseOrder = async (data) => {
     return po;
   });
 
-  return formatPurchaseOrder(createdPO);
+  const formatted = formatPurchaseOrder(createdPO);
+  try {
+    await auditLogService.logEvent({
+      action: 'CREATE',
+      module: 'PURCHASE_ORDER',
+      entity: 'PurchaseOrder',
+      entityId: formatted.id,
+      description: `Created purchase order ${formatted.poNumber} for supplier "${formatted.supplierName}" totaling ${formatted.total}`,
+      severity: 'INFO',
+      userId: formatted.createdById || null,
+      userName: formatted.createdBy || null,
+    });
+  } catch (err) {
+    console.error('Failed to log PO create audit:', err.message);
+  }
+
+  return formatted;
 };
 
 /**
@@ -597,7 +615,31 @@ const updatePurchaseOrderStatus = async (id, status) => {
     },
   });
 
-  return formatPurchaseOrder(updated);
+  const formatted = formatPurchaseOrder(updated);
+  try {
+    await auditLogService.logEvent({
+      action: 'STATUS_CHANGE',
+      module: 'PURCHASE_ORDER',
+      entity: 'PurchaseOrder',
+      entityId: formatted.id,
+      description: `Purchase order ${formatted.poNumber} status updated to ${formatted.status}`,
+      severity: formatted.status === 'CANCELLED' ? 'WARNING' : 'INFO',
+    });
+
+    if (formatted.status === 'CANCELLED') {
+      await notificationService.createNotification({
+        type: 'PURCHASE_ORDER',
+        title: `Purchase Order Cancelled: ${formatted.poNumber}`,
+        message: `Purchase order ${formatted.poNumber} with supplier ${formatted.supplierName} was cancelled.`,
+        severity: 'WARNING',
+        relatedId: formatted.id,
+      });
+    }
+  } catch (err) {
+    console.error('Failed to log PO status change audit/notification:', err.message);
+  }
+
+  return formatted;
 };
 
 /**
@@ -648,7 +690,29 @@ const approvePurchaseOrder = async (id) => {
     },
   });
 
-  return formatPurchaseOrder(updated);
+  const formatted = formatPurchaseOrder(updated);
+  try {
+    await auditLogService.logEvent({
+      action: 'APPROVAL',
+      module: 'PURCHASE_ORDER',
+      entity: 'PurchaseOrder',
+      entityId: formatted.id,
+      description: `Approved purchase order ${formatted.poNumber} for warehouse "${formatted.warehouseName}"`,
+      severity: 'INFO',
+    });
+
+    await notificationService.createNotification({
+      type: 'PURCHASE_ORDER',
+      title: `Purchase Order Approved: ${formatted.poNumber}`,
+      message: `Purchase order ${formatted.poNumber} for supplier ${formatted.supplierName} has been approved.`,
+      severity: 'INFO',
+      relatedId: formatted.id,
+    });
+  } catch (err) {
+    console.error('Failed to log PO approval audit/notification:', err.message);
+  }
+
+  return formatted;
 };
 
 /**
@@ -899,8 +963,31 @@ const receiveGoods = async (id, payload = {}) => {
     };
   });
 
+  const formattedPO = formatPurchaseOrder(result.purchaseOrder);
+  try {
+    const finalStatus = formattedPO.status;
+    await auditLogService.logEvent({
+      action: 'STATUS_CHANGE',
+      module: 'PURCHASE_ORDER',
+      entity: 'PurchaseOrder',
+      entityId: formattedPO.id,
+      description: `Received ${totalReceivingUnits} units for PO ${formattedPO.poNumber}. Status is now ${finalStatus}`,
+      severity: 'INFO',
+    });
+
+    await notificationService.createNotification({
+      type: 'PURCHASE_ORDER',
+      title: `Goods Received: PO ${formattedPO.poNumber}`,
+      message: `Received ${totalReceivingUnits} units against PO ${formattedPO.poNumber}. Current PO status: ${finalStatus}.`,
+      severity: finalStatus === 'RECEIVED' ? 'SUCCESS' : 'INFO',
+      relatedId: formattedPO.id,
+    });
+  } catch (err) {
+    console.error('Failed to log goods receiving audit/notification:', err.message);
+  }
+
   return {
-    purchaseOrder: formatPurchaseOrder(result.purchaseOrder),
+    purchaseOrder: formattedPO,
     movementsCount: result.movements.length,
     receivedUnits: totalReceivingUnits,
     message: 'Goods received successfully and inventory updated',
