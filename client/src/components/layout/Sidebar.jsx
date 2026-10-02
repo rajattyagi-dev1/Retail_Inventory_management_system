@@ -1,5 +1,6 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../hooks/useAuth';
 import {
   LayoutDashboard,
   Package,
@@ -72,6 +73,7 @@ const NAVIGATION_GROUPS = [
   },
   {
     title: 'ADMINISTRATION',
+    roles: ['ADMIN'],
     items: [
       { name: 'Admin Console', path: '/admin', icon: ShieldCheck },
       { name: 'Users', path: '/admin/users', icon: Users, badge: '8' },
@@ -90,9 +92,18 @@ export default function Sidebar({
   mobileOpen = false,
   onCloseMobile,
 }) {
-  const handleLogout = () => {
-    alert('Authentication & session management will be implemented in subsequent phases.');
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
   };
+
+  const visibleGroups = NAVIGATION_GROUPS.filter((group) => {
+    if (!group.roles) return true;
+    return group.roles.includes(user?.role);
+  });
 
   return (
     <>
@@ -136,7 +147,7 @@ export default function Sidebar({
 
         {/* Grouped Navigation Links */}
         <nav className="sidebar-nav-container">
-          {NAVIGATION_GROUPS.map((group) => (
+          {visibleGroups.map((group) => (
             <div key={group.title} className="nav-group">
               {!isCollapsed && (
                 <div className="nav-group-title">{group.title}</div>
@@ -169,8 +180,8 @@ export default function Sidebar({
         <div className="sidebar-footer">
           {!isCollapsed && (
             <div className="sidebar-system-info">
-              <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: 2 }}>System Status</div>
-              <div>Mode: Frontend Shell (Phase 2A)</div>
+              <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: 2 }}>Security Role</div>
+              <div style={{ color: '#38bdf8', fontSize: '11px', fontWeight: 600 }}>{user?.role || 'AUTHENTICATED'}</div>
             </div>
           )}
 

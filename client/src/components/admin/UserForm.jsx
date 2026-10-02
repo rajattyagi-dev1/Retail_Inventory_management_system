@@ -78,7 +78,7 @@ export default function UserForm({
               id="usr-name"
               name="name"
               className={`form-input ${errors.name ? 'error' : ''}`}
-              placeholder="e.g. Alex Mercer"
+              placeholder="e.g. John Doe"
               value={formData.name}
               onChange={handleChange}
             />

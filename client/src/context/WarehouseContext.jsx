@@ -136,6 +136,11 @@ export function WarehouseProvider({ children }) {
 
   // Initial load from MySQL on mount
   useEffect(() => {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     let active = true;
     (async () => {
       try {

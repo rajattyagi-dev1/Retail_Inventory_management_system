@@ -1,6 +1,7 @@
 /**
  * Centralized API Client for Retail Inventory Management System (Project ID: P_022).
- * Wraps browser fetch with base URL configuration, parameter serialization, and error handling.
+ * Wraps browser fetch with base URL configuration, parameter serialization, automatic
+ * Bearer token injection from localStorage, and unified error handling.
  */
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api').replace(/\/+$/, '');
@@ -11,6 +12,12 @@ class ApiClientError extends Error {
     this.name = 'ApiClientError';
     this.status = status;
     this.data = data;
+    this.isUnauthorized = status === 401;
+    this.isForbidden = status === 403;
+    this.isNotFound = status === 404;
+    this.isConflict = status === 409;
+    this.isValidationError = status === 400;
+    this.isServerError = status >= 500;
   }
 }
 
@@ -32,6 +39,8 @@ function buildQueryString(params = {}) {
 
 /**
  * Performs an HTTP request against the API backend.
+ * Automatically attaches Authorization: Bearer <token> from localStorage.
+ * 
  * @param {string} endpoint - API path relative to BASE_URL (e.g. '/products')
  * @param {object} options - Fetch options including method, body, params, headers
  * @returns {Promise<any>}
@@ -41,13 +50,28 @@ async function request(endpoint, options = {}) {
 
   const url = `${BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}${buildQueryString(params)}`;
 
+  const requestHeaders = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    ...headers,
+  };
+
+  // Automatically attach Bearer token from localStorage for protected requests
+  const isAuthLogin = endpoint.includes('/auth/login');
+  if (!isAuthLogin && !requestHeaders['Authorization'] && !requestHeaders['authorization']) {
+    try {
+      const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+      if (token) {
+        requestHeaders['Authorization'] = `Bearer ${token}`;
+      }
+    } catch {
+      // Storage access error tolerance
+    }
+  }
+
   const config = {
     method: customConfig.method || 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      ...headers,
-    },
+    headers: requestHeaders,
     ...customConfig,
   };
 
@@ -69,7 +93,31 @@ async function request(endpoint, options = {}) {
     }
 
     if (!response.ok) {
-      const errorMessage = data?.message || `HTTP ${response.status}: ${response.statusText || 'Request failed'}`;
+      const errorMessage =
+        data?.message ||
+        data?.error?.message ||
+        data?.error ||
+        `HTTP ${response.status}: ${response.statusText || 'Request failed'}`;
+
+      // Handle 401 Unauthorized for protected endpoints
+      if (response.status === 401 && !isAuthLogin) {
+        try {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+          }
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('auth:unauthorized', {
+                detail: { message: errorMessage, endpoint },
+              })
+            );
+          }
+        } catch {
+          // Event dispatch error tolerance
+        }
+      }
+
       throw new ApiClientError(errorMessage, response.status, data);
     }
 
@@ -78,7 +126,7 @@ async function request(endpoint, options = {}) {
     if (error instanceof ApiClientError) {
       throw error;
     }
-    // Network or parsing errors
+    // Network or server unavailable errors
     throw new ApiClientError(
       error.message || 'Unable to connect to the backend server. Please check your network connection.',
       0,

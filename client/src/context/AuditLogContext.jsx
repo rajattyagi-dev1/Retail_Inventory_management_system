@@ -10,11 +10,22 @@ export function AuditLogProvider({ children }) {
     const now = new Date();
     const timestamp = `${now.toISOString().split('T')[0]} ${now.toTimeString().split(' ')[0]}`;
 
+    let currentUserName = 'System Operator';
+    try {
+      const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('user') : null;
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.name) currentUserName = parsed.name;
+      }
+    } catch {
+      // Fallback
+    }
+
     const record = {
       ...entry,
       id: nextId,
       timestamp: entry.timestamp || timestamp,
-      user: entry.user || 'Alex Mercer',
+      user: entry.user || currentUserName,
       severity: entry.severity || 'INFO',
     };
 

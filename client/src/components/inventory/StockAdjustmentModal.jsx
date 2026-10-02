@@ -363,7 +363,7 @@ function StockAdjustmentDialog({
                   type="text"
                   id="adj-user"
                   className="form-input"
-                  placeholder="e.g. Alex Mercer"
+                  placeholder="e.g. System Administrator"
                   value={performedBy}
                   onChange={(e) => setPerformedBy(e.target.value)}
                 />

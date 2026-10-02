@@ -14,8 +14,8 @@ import {
   Info,
   AlertCircle,
 } from 'lucide-react';
-import { MOCK_CURRENT_USER } from '../../utils/mockData';
 import { useNotifications } from '../../hooks/useNotifications';
+import { useAuth } from '../../hooks/useAuth';
 
 const ROUTE_NAME_MAP = {
   '/': 'Dashboard Overview',
@@ -42,6 +42,7 @@ export default function Header({ onOpenMobileMenu }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
+  const { user, logout } = useAuth();
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -62,6 +63,23 @@ export default function Header({ onOpenMobileMenu }) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleSignOut = async () => {
+    setShowProfileMenu(false);
+    await logout();
+    navigate('/login');
+  };
+
+  const userInitials = user?.name
+    ? user.name
+        .split(' ')
+        .map((w) => w[0])
+        .filter(Boolean)
+        .slice(0, 2)
+        .join('')
+        .toUpperCase()
+    : 'AU';
+  const displayRole = user?.role ? user.role.replace(/_/g, ' ') : 'System Operator';
 
   let pageTitle = ROUTE_NAME_MAP[location.pathname];
   let breadcrumbTrail = [{ label: 'Home', path: '/dashboard' }];
@@ -354,10 +372,10 @@ export default function Header({ onOpenMobileMenu }) {
             onClick={() => setShowProfileMenu(!showProfileMenu)}
             aria-expanded={showProfileMenu}
           >
-            <div className="user-avatar" aria-hidden="true">AM</div>
+            <div className="user-avatar" aria-hidden="true">{userInitials}</div>
             <div className="user-details">
-              <span className="user-name">{MOCK_CURRENT_USER.name}</span>
-              <span className="user-role-label">{MOCK_CURRENT_USER.role}</span>
+              <span className="user-name">{user?.name || 'Authenticated User'}</span>
+              <span className="user-role-label">{displayRole}</span>
             </div>
             <ChevronDown size={14} style={{ color: '#94a3b8', marginLeft: 4 }} />
           </button>
@@ -365,47 +383,48 @@ export default function Header({ onOpenMobileMenu }) {
           {showProfileMenu && (
             <div className="dropdown-menu" role="menu">
               <div style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', marginBottom: 4 }}>
-                <div style={{ fontWeight: 600, fontSize: 13, color: '#0f172a' }}>{MOCK_CURRENT_USER.name}</div>
-                <div style={{ fontSize: 11, color: '#64748b' }}>{MOCK_CURRENT_USER.email}</div>
+                <div style={{ fontWeight: 600, fontSize: 13, color: '#0f172a' }}>{user?.name || 'Authenticated User'}</div>
+                <div style={{ fontSize: 11, color: '#64748b' }}>{user?.email || ''}</div>
               </div>
 
-              <Link
-                to="/admin/users"
-                className="dropdown-item"
-                role="menuitem"
-                onClick={() => setShowProfileMenu(false)}
-              >
-                <User size={15} />
-                <span>My Profile</span>
-              </Link>
-              <Link
-                to="/admin"
-                className="dropdown-item"
-                role="menuitem"
-                onClick={() => setShowProfileMenu(false)}
-              >
-                <Shield size={15} />
-                <span>Admin Console</span>
-              </Link>
-              <Link
-                to="/admin/audit-logs"
-                className="dropdown-item"
-                role="menuitem"
-                onClick={() => setShowProfileMenu(false)}
-              >
-                <Settings size={15} />
-                <span>Audit Logs</span>
-              </Link>
+              {user?.role === 'ADMIN' && (
+                <>
+                  <Link
+                    to="/admin/users"
+                    className="dropdown-item"
+                    role="menuitem"
+                    onClick={() => setShowProfileMenu(false)}
+                  >
+                    <User size={15} />
+                    <span>User Management</span>
+                  </Link>
+                  <Link
+                    to="/admin"
+                    className="dropdown-item"
+                    role="menuitem"
+                    onClick={() => setShowProfileMenu(false)}
+                  >
+                    <Shield size={15} />
+                    <span>Admin Console</span>
+                  </Link>
+                  <Link
+                    to="/admin/audit-logs"
+                    className="dropdown-item"
+                    role="menuitem"
+                    onClick={() => setShowProfileMenu(false)}
+                  >
+                    <Settings size={15} />
+                    <span>Audit Logs</span>
+                  </Link>
+                </>
+              )}
 
               <div className="dropdown-divider" />
 
               <div
                 className="dropdown-item danger"
                 role="menuitem"
-                onClick={() => {
-                  setShowProfileMenu(false);
-                  alert('Session management and authentication will be introduced in subsequent phases.');
-                }}
+                onClick={handleSignOut}
               >
                 <LogOut size={15} />
                 <span>Sign Out</span>

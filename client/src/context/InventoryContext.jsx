@@ -244,6 +244,11 @@ export function InventoryProvider({ children }) {
 
   // Initial data loading on provider mount
   useEffect(() => {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     let active = true;
     (async () => {
       try {

@@ -221,6 +221,12 @@ export function ProductProvider({ children }) {
 
   // Initial data loading from server on mount
   useEffect(() => {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) {
+      setLoading(false);
+      setCategoriesLoading(false);
+      return;
+    }
     let active = true;
     (async () => {
       try {
