@@ -1,7 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Download, 
   RotateCw, 
+  Package, 
+  Boxes, 
+  AlertTriangle, 
+  Clock, 
+  Warehouse, 
+  IndianRupee 
 } from 'lucide-react';
 import StatCard from '../../components/common/StatCard';
 import InventoryOverview from '../../components/dashboard/InventoryOverview';
@@ -10,27 +16,101 @@ import LowStockTable from '../../components/dashboard/LowStockTable';
 import RecentOrdersTable from '../../components/dashboard/RecentOrdersTable';
 import RecentStockMovements from '../../components/dashboard/RecentStockMovements';
 import RecentNotifications from '../../components/dashboard/RecentNotifications';
-import { MOCK_SUMMARY_STATS } from '../../utils/mockData';
+import reportService from '../../services/reportService';
 
 /**
- * Main Enterprise Dashboard Component (Phase 2A).
+ * Main Enterprise Dashboard Component.
  * Integrates summary metrics, regional inventory distribution, fulfillment status,
  * stock alert tables, recent orders, inventory ledger, and notification streams.
  */
 export default function Dashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedTimeframe, setSelectedTimeframe] = useState('7d');
+  const [dashboardData, setDashboardData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      const res = await reportService.getDashboardReport();
+      if (res && res.data) {
+        setDashboardData(res.data);
+      }
+      setError(null);
+    } catch (err) {
+      console.error('Failed to load dashboard report:', err);
+      setError(err.message || 'Failed to load telemetry metrics');
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 600);
+    fetchDashboardData();
   };
 
   const handleExport = () => {
-    alert('Export report feature will be connected to backend reporting service in upcoming sprint.');
+    window.print();
   };
+
+  const invKpis = dashboardData?.inventory || {};
+  const ordKpis = dashboardData?.orders || {};
+  const whKpis = dashboardData?.warehouses || {};
+
+  const summaryCards = [
+    {
+      id: 'total-products',
+      title: 'Total Products',
+      value: loading ? '...' : (invKpis.totalProductsTracked ?? 0).toLocaleString(),
+      subtext: `${invKpis.totalInventoryRecords ?? 0} inventory records`,
+      icon: Package,
+    },
+    {
+      id: 'total-inventory',
+      title: 'Total Inventory Units',
+      value: loading ? '...' : (invKpis.totalCurrentStock ?? 0).toLocaleString(),
+      subtext: `Available: ${(invKpis.totalAvailableStock ?? 0).toLocaleString()} units`,
+      icon: Boxes,
+    },
+    {
+      id: 'low-stock',
+      title: 'Low Stock Alerts',
+      value: loading ? '...' : (invKpis.lowStockCount ?? 0).toLocaleString(),
+      change: invKpis.outOfStockCount > 0 ? `${invKpis.outOfStockCount} out of stock` : 'Stable',
+      changeType: invKpis.lowStockCount > 0 ? 'negative' : 'positive',
+      subtext: 'Reorder levels breached',
+      icon: AlertTriangle,
+    },
+    {
+      id: 'active-warehouses',
+      title: 'Active Warehouses',
+      value: loading ? '...' : `${whKpis.active ?? 0} / ${whKpis.total ?? 0}`,
+      subtext: 'Operational storage hubs',
+      icon: Warehouse,
+    },
+    {
+      id: 'pending-orders',
+      title: 'Pending Orders',
+      value: loading ? '...' : (
+        (ordKpis.statusCounts?.PENDING || 0) + (ordKpis.statusCounts?.CONFIRMED || 0)
+      ).toLocaleString(),
+      subtext: `${ordKpis.activePipelineOrders ?? 0} active in pipeline`,
+      icon: Clock,
+    },
+    {
+      id: 'total-valuation',
+      title: 'Total Inventory Value',
+      value: loading ? '...' : `₹${(invKpis.totalCostValue ?? 0).toLocaleString('en-IN')}`,
+      subtext: `Retail: ₹${(invKpis.totalRetailValue ?? 0).toLocaleString('en-IN')}`,
+      icon: IndianRupee,
+    },
+  ];
 
   return (
     <div className="dashboard-container">
@@ -125,9 +205,19 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {error && (
+        <div style={{ padding: '12px 16px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#991b1b', marginBottom: '20px', fontSize: '13px' }}>
+          {error}
+        </div>
+      )}
+
       {/* 1. Summary Cards Grid */}
-      <section className="stats-grid" aria-label="Summary Key Performance Indicators">
-        {MOCK_SUMMARY_STATS.map((stat) => (
+      <section 
+        className="stats-grid" 
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }} 
+        aria-label="Summary Key Performance Indicators"
+      >
+        {summaryCards.map((stat) => (
           <StatCard
             key={stat.id}
             title={stat.title}

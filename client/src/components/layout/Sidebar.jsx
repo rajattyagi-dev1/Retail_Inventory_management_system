@@ -33,29 +33,29 @@ const NAVIGATION_GROUPS = [
   {
     title: 'CATALOG',
     items: [
-      { name: 'Products', path: '/products', icon: Package, badge: '12' },
-      { name: 'Categories', path: '/products/categories', icon: Tag, badge: '4' },
+      { name: 'Products', path: '/products', icon: Package },
+      { name: 'Categories', path: '/products/categories', icon: Tag },
     ],
   },
   {
     title: 'INVENTORY',
     items: [
-      { name: 'Inventory', path: '/inventory', icon: Boxes, badge: '22' },
-      { name: 'Warehouses', path: '/warehouses', icon: Warehouse, badge: '6' },
+      { name: 'Inventory', path: '/inventory', icon: Boxes },
+      { name: 'Warehouses', path: '/warehouses', icon: Warehouse },
       { name: 'Stock Movements', path: '/inventory/movements', icon: History },
     ],
   },
   {
     title: 'PROCUREMENT',
     items: [
-      { name: 'Suppliers', path: '/suppliers', icon: Truck, badge: '8' },
-      { name: 'Purchase Orders', path: '/purchase-orders', icon: FileSpreadsheet, badge: '12' },
+      { name: 'Suppliers', path: '/suppliers', icon: Truck },
+      { name: 'Purchase Orders', path: '/purchase-orders', icon: FileSpreadsheet },
     ],
   },
   {
     title: 'SALES',
     items: [
-      { name: 'Orders', path: '/orders', icon: ShoppingCart, badge: '16' },
+      { name: 'Orders', path: '/orders', icon: ShoppingCart },
       { name: 'Fulfillment', path: '/orders/fulfillment', icon: CheckCircle2 },
     ],
   },
@@ -76,7 +76,7 @@ const NAVIGATION_GROUPS = [
     roles: ['ADMIN'],
     items: [
       { name: 'Admin Console', path: '/admin', icon: ShieldCheck },
-      { name: 'Users', path: '/admin/users', icon: Users, badge: '8' },
+      { name: 'Users', path: '/admin/users', icon: Users },
       { name: 'Audit Logs', path: '/admin/audit-logs', icon: ClipboardList },
     ],
   },

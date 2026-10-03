@@ -154,38 +154,42 @@ export default function CreateOrderPage() {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) return;
 
-    const selectedWh = warehouses.find((w) => w.id === warehouseId);
+    try {
+      const selectedWh = warehouses.find((w) => w.id === warehouseId);
 
-    createOrder({
-      customerName: customer.name,
-      customerEmail: customer.email,
-      customerPhone: customer.phone,
-      warehouseId,
-      warehouseName: selectedWh?.name || 'Assigned Warehouse',
-      shippingAddress: {
-        address: customer.address,
-        city: customer.city,
-        state: customer.state,
-        pincode: customer.pincode,
-      },
-      items: calculatedItems.map(({ productId, productName, sku, quantity, unitPrice, total }) => ({
-        productId,
-        productName,
-        sku,
-        quantity,
-        unitPrice,
-        total,
-      })),
-      totalAmount: grandTotal,
-      status: 'CONFIRMED',
-      paymentStatus: 'PAID',
-    });
+      await createOrder({
+        customerName: customer.name,
+        customerEmail: customer.email,
+        customerPhone: customer.phone,
+        warehouseId,
+        warehouseName: selectedWh?.name || 'Assigned Warehouse',
+        shippingAddress: {
+          address: customer.address,
+          city: customer.city,
+          state: customer.state,
+          pincode: customer.pincode,
+        },
+        items: calculatedItems.map(({ productId, productName, sku, quantity, unitPrice, total }) => ({
+          productId,
+          productName,
+          sku,
+          quantity,
+          unitPrice,
+          total,
+        })),
+        totalAmount: grandTotal,
+        status: 'CONFIRMED',
+        paymentStatus: 'PAID',
+      });
 
-    navigate('/orders');
+      navigate('/orders');
+    } catch (err) {
+      console.error('Order creation failed:', err);
+    }
   };
 
   return (

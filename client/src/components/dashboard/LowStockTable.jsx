@@ -3,28 +3,25 @@ import SectionHeader from '../common/SectionHeader';
 import DataTable from '../common/DataTable';
 import StatusBadge from '../common/StatusBadge';
 import { useInventory } from '../../hooks/useInventory';
-import { MOCK_LOW_STOCK_PRODUCTS } from '../../utils/mockData';
 
 /**
  * Low stock products monitoring table.
  */
 export default function LowStockTable() {
-  const { inventory } = useInventory();
+  const { inventory, loading } = useInventory();
   const lowStockItems = inventory.filter(
     (i) => i.stockStatus === 'LOW_STOCK' || i.stockStatus === 'OUT_OF_STOCK'
   );
-  const displayData = lowStockItems.length > 0
-    ? lowStockItems.map((i) => ({
-        id: i.id,
-        sku: i.sku,
-        name: i.productName,
-        category: i.category,
-        warehouse: i.warehouseName,
-        currentStock: i.currentStock,
-        reorderLevel: i.reorderLevel,
-        status: i.stockStatus,
-      }))
-    : MOCK_LOW_STOCK_PRODUCTS;
+  const displayData = lowStockItems.map((i) => ({
+    id: i.id,
+    sku: i.sku,
+    name: i.productName,
+    category: i.category,
+    warehouse: i.warehouseName,
+    currentStock: i.currentStock,
+    reorderLevel: i.reorderLevel,
+    status: i.stockStatus,
+  }));
   const columns = [
     {
       key: 'sku',
@@ -102,7 +99,10 @@ export default function LowStockTable() {
       <DataTable
         columns={columns}
         data={displayData}
+        loading={loading}
         keyExtractor={(item) => item.id}
+        emptyTitle="No low stock items"
+        emptyMessage="All tracked inventory levels are currently above reorder thresholds."
       />
     </div>
   );

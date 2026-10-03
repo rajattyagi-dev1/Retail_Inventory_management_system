@@ -1,13 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { OrderContext } from './orderContextInstance';
-import { INITIAL_ORDERS } from '../utils/orderMockData';
+import orderService from '../services/orderService';
 import { useInventory } from '../hooks/useInventory';
 
 export function OrderProvider({ children }) {
-  const [orders, setOrders] = useState(INITIAL_ORDERS);
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [pagination, setPagination] = useState({ page: 1, limit: 100, total: 0, totalPages: 1 });
   const [toast, setToast] = useState(null);
 
-  const { inventory, updateStock, adjustStock } = useInventory();
+  // Hook into inventory to refresh stock numbers when orders reserve or ship
+  const { fetchInventory, fetchStockMovements } = useInventory();
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -16,157 +20,162 @@ export function OrderProvider({ children }) {
     }, 3500);
   };
 
-  const createOrder = (newOrderData) => {
-    const nextNumber = `ORD-2026-${String(orders.length + 1).padStart(4, '0')}`;
-    const nextId = `ord-${Date.now().toString().slice(-4)}`;
-
-    const record = {
-      ...newOrderData,
-      id: nextId,
-      orderNumber: newOrderData.orderNumber || nextNumber,
-      status: newOrderData.status || 'CONFIRMED',
-      paymentStatus: newOrderData.paymentStatus || 'PAID',
-      orderDate: newOrderData.orderDate || new Date().toISOString().split('T')[0],
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-
-    // Stock reservation logic: increase reservedStock on matching warehouse inventory
-    if (record.status !== 'CANCELLED') {
-      (record.items || []).forEach((item) => {
-        const matched = inventory.find(
-          (inv) =>
-            inv.productId === item.productId &&
-            (String(inv.warehouseId) === String(record.warehouseId) ||
-              inv.warehouseName === record.warehouseName)
-        );
-
-        if (matched) {
-          const newReserved = Math.min(matched.currentStock, (matched.reservedStock || 0) + item.quantity);
-          const newAvail = Math.max(0, matched.currentStock - newReserved);
-          updateStock(matched.id, {
-            reservedStock: newReserved,
-            availableStock: newAvail,
-          });
-        }
-      });
+  /**
+   * Fetch orders from backend REST API.
+   */
+  const fetchOrders = useCallback(async (params = { limit: 100 }) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await orderService.getOrders(params);
+      setOrders(result.data);
+      setPagination(result.pagination);
+      return result.data;
+    } catch (err) {
+      console.error('Failed to fetch orders:', err);
+      setError(err.message || 'Failed to load customer orders');
+      return [];
+    } finally {
+      setLoading(false);
     }
+  }, []);
 
-    setOrders((prev) => [record, ...prev]);
-    showToast(`Order ${record.orderNumber} created. Stock reserved successfully.`);
-    return record;
+  /**
+   * Create customer order via backend API.
+   * If status is CONFIRMED, backend atomically reserves stock in Prisma transaction.
+   */
+  const createOrder = async (newOrderData) => {
+    try {
+      const result = await orderService.createOrder(newOrderData);
+      setOrders((prev) => [result.data, ...prev]);
+
+      // If stock was reserved on creation, refresh inventory state
+      if (['CONFIRMED', 'PROCESSING', 'PICKING', 'PACKED'].includes(result.data.status)) {
+        if (typeof fetchInventory === 'function') fetchInventory();
+        if (typeof fetchStockMovements === 'function') fetchStockMovements();
+      }
+
+      showToast(`Order ${result.data.orderNumber} created successfully.`);
+      return result.data;
+    } catch (err) {
+      showToast(err.message || 'Failed to create order', 'error');
+      throw err;
+    }
   };
 
-  const updateOrderStatus = (id, newStatus, reason = '') => {
-    let updatedOrder = null;
+  /**
+   * Update order fulfillment status via backend API.
+   * Backend handles transition validation, stock deductions upon SHIPPED, and audit logging.
+   */
+  const updateOrderStatus = async (id, newStatus, reason = '', notes = '') => {
+    try {
+      const result = await orderService.updateOrderStatus(id, newStatus, reason, notes);
+      setOrders((prev) =>
+        prev.map((order) => (String(order.id) === String(id) ? result.data : order))
+      );
 
-    setOrders((prev) =>
-      prev.map((order) => {
-        if (String(order.id) !== String(id)) return order;
+      // If transition impacts stock (e.g. SHIPPED or CANCELLED), refresh inventory
+      if (['SHIPPED', 'CANCELLED'].includes(newStatus)) {
+        if (typeof fetchInventory === 'function') fetchInventory();
+        if (typeof fetchStockMovements === 'function') fetchStockMovements();
+      }
 
-        const previousStatus = order.status;
-        updatedOrder = {
-          ...order,
-          status: newStatus,
-          ...(reason ? { cancellationReason: reason } : {}),
-        };
-
-        // Handle stock impact on status changes:
-        // 1. If transitioning to SHIPPED: deduct physical stock & clear reservation, log SALE movement
-        if (newStatus === 'SHIPPED' && previousStatus !== 'SHIPPED') {
-          (order.items || []).forEach((item) => {
-            const matched = inventory.find(
-              (inv) =>
-                inv.productId === item.productId &&
-                (String(inv.warehouseId) === String(order.warehouseId) ||
-                  inv.warehouseName === order.warehouseName)
-            );
-
-            if (matched) {
-              const deductQty = item.quantity;
-              const newCurrent = Math.max(0, matched.currentStock - deductQty);
-              const newReserved = Math.max(0, (matched.reservedStock || 0) - deductQty);
-              const newAvail = Math.max(0, newCurrent - newReserved);
-
-              updateStock(matched.id, {
-                currentStock: newCurrent,
-                reservedStock: newReserved,
-                availableStock: newAvail,
-              });
-
-              adjustStock({
-                inventoryId: matched.id,
-                type: 'REMOVE STOCK',
-                quantity: deductQty,
-                reason: `Customer Dispatch (${order.orderNumber})`,
-                reference: order.orderNumber,
-                performedBy: 'Dispatch Coordinator',
-                notes: `Shipped order to ${order.customerName}`,
-              });
-            }
-          });
-        }
-
-        // 2. If cancelling an un-shipped order: release reserved stock
-        if (newStatus === 'CANCELLED' && previousStatus !== 'CANCELLED' && previousStatus !== 'SHIPPED') {
-          (order.items || []).forEach((item) => {
-            const matched = inventory.find(
-              (inv) =>
-                inv.productId === item.productId &&
-                (String(inv.warehouseId) === String(order.warehouseId) ||
-                  inv.warehouseName === order.warehouseName)
-            );
-
-            if (matched) {
-              const releaseQty = item.quantity;
-              const newReserved = Math.max(0, (matched.reservedStock || 0) - releaseQty);
-              const newAvail = Math.max(0, matched.currentStock - newReserved);
-
-              updateStock(matched.id, {
-                reservedStock: newReserved,
-                availableStock: newAvail,
-              });
-            }
-          });
-        }
-
-        return updatedOrder;
-      })
-    );
-
-    showToast(`Order status updated to ${newStatus}.`, 'info');
-    return updatedOrder;
+      showToast(`Order status updated to ${newStatus}.`, 'info');
+      return result.data;
+    } catch (err) {
+      showToast(err.message || 'Failed to update order status', 'error');
+      throw err;
+    }
   };
 
-  const cancelOrder = (id, reason = 'Customer requested cancellation') => {
-    return updateOrderStatus(id, 'CANCELLED', reason);
+  /**
+   * Reserve stock for an existing order via backend API.
+   */
+  const reserveStock = async (id) => {
+    try {
+      const result = await orderService.reserveStock(id);
+      setOrders((prev) =>
+        prev.map((order) => (String(order.id) === String(id) ? result.data : order))
+      );
+      if (typeof fetchInventory === 'function') fetchInventory();
+      showToast('Stock reserved successfully.', 'success');
+      return result.data;
+    } catch (err) {
+      showToast(err.message || 'Failed to reserve stock', 'error');
+      throw err;
+    }
   };
 
-  const getOrderById = (id) => {
-    if (!id) return null;
-    return orders.find((ord) => String(ord.id) === String(id));
+  /**
+   * Cancel an order via backend API. Releases any reserved stock.
+   */
+  const cancelOrder = async (id, reason = 'Customer requested cancellation') => {
+    try {
+      const result = await orderService.cancelOrder(id, reason);
+      setOrders((prev) =>
+        prev.map((order) => (String(order.id) === String(id) ? result.data : order))
+      );
+      if (typeof fetchInventory === 'function') fetchInventory();
+      showToast('Order has been cancelled.', 'warning');
+      return result.data;
+    } catch (err) {
+      showToast(err.message || 'Failed to cancel order', 'error');
+      throw err;
+    }
   };
 
-  const getPendingOrders = () => {
-    return orders.filter((ord) => ord.status === 'PENDING' || ord.status === 'CONFIRMED');
-  };
+  /**
+   * Synchronous cache lookup for order by ID.
+   */
+  const getOrderById = useCallback(
+    (id) => {
+      if (!id) return null;
+      return orders.find((order) => String(order.id) === String(id)) || null;
+    },
+    [orders]
+  );
 
-  const getOrdersByWarehouse = (warehouseId) => {
-    if (!warehouseId) return [];
-    return orders.filter(
-      (ord) =>
-        String(ord.warehouseId) === String(warehouseId) ||
-        ord.warehouseName?.toLowerCase() === String(warehouseId).toLowerCase()
-    );
-  };
+  const getOrdersByCustomer = useCallback(
+    (email) => {
+      if (!email) return [];
+      return orders.filter(
+        (o) => o.customerEmail && o.customerEmail.toLowerCase() === email.toLowerCase()
+      );
+    },
+    [orders]
+  );
+
+  const getWarehouseOrders = useCallback(
+    (warehouseId) => {
+      if (!warehouseId) return [];
+      return orders.filter((o) => String(o.warehouseId) === String(warehouseId));
+    },
+    [orders]
+  );
+
+  // Load orders on mount if authenticated
+  useEffect(() => {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+    if (token) {
+      fetchOrders();
+    } else {
+      setLoading(false);
+    }
+  }, [fetchOrders]);
 
   const value = {
     orders,
+    loading,
+    error,
+    pagination,
+    fetchOrders,
     createOrder,
     updateOrderStatus,
+    reserveStock,
     cancelOrder,
     getOrderById,
-    getPendingOrders,
-    getOrdersByWarehouse,
+    getOrdersByCustomer,
+    getWarehouseOrders,
   };
 
   return (

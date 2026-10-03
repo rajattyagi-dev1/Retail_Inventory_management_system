@@ -25,7 +25,7 @@ const ITEMS_PER_PAGE = 10;
 
 export default function OrderListPage() {
   const navigate = useNavigate();
-  const { orders } = useOrders();
+  const { orders, loading } = useOrders();
   const { warehouses } = useWarehouses();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -446,6 +446,7 @@ export default function OrderListPage() {
         <DataTable
           columns={columns}
           data={paginatedOrders}
+          loading={loading}
           keyExtractor={(ord) => ord.id}
           emptyTitle="No customer orders found"
           emptyMessage="No sales orders match your filter criteria."

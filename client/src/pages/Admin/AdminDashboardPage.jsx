@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Users,
@@ -10,15 +10,35 @@ import {
 import { useUsers } from '../../hooks/useUsers';
 import { useAuditLogs } from '../../hooks/useAuditLogs';
 import { useNotifications } from '../../hooks/useNotifications';
+import adminService from '../../services/adminService';
 import StatusBadge from '../../components/common/StatusBadge';
 
 export default function AdminDashboardPage() {
   const { users } = useUsers();
   const { auditLogs } = useAuditLogs();
-  const { unreadCount } = useNotifications();
+  const { unreadCount: contextUnread } = useNotifications();
 
-  const totalUsers = users.length;
-  const activeUsers = users.filter((u) => u.status === 'ACTIVE').length;
+  const [adminData, setAdminData] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    adminService
+      .getAdminDashboard()
+      .then((res) => {
+        if (mounted && res && res.data) {
+          setAdminData(res.data);
+        }
+      })
+      .catch((err) => console.error('Failed to load admin dashboard:', err));
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const totalUsers = adminData?.users?.total ?? users.length;
+  const activeUsers = adminData?.users?.active ?? users.filter((u) => u.status === 'ACTIVE').length;
+  const auditEventsCount = auditLogs.length;
+  const unreadAlerts = adminData?.notifications?.unreadCount ?? contextUnread;
   const recentLogs = auditLogs.slice(0, 6);
   const recentUsers = users.slice(0, 5);
 
@@ -85,7 +105,7 @@ export default function AdminDashboardPage() {
               <ClipboardList size={18} />
             </div>
           </div>
-          <div className="stat-card-value">{auditLogs.length}</div>
+          <div className="stat-card-value">{auditEventsCount}</div>
           <div className="stat-card-bottom">
             <span className="stat-card-subtext">Recorded compliance actions</span>
           </div>
@@ -98,8 +118,8 @@ export default function AdminDashboardPage() {
               <Bell size={18} />
             </div>
           </div>
-          <div className="stat-card-value" style={{ color: unreadCount > 0 ? '#dc2626' : '#059669' }}>
-            {unreadCount}
+          <div className="stat-card-value" style={{ color: unreadAlerts > 0 ? '#dc2626' : '#059669' }}>
+            {unreadAlerts}
           </div>
           <div className="stat-card-bottom">
             <span className="stat-card-subtext">Active attention required</span>
@@ -215,7 +235,7 @@ export default function AdminDashboardPage() {
           <div className="details-key-val-item">
             <span className="details-key">Current Architecture Mode</span>
             <span className="details-val" style={{ color: '#059669', fontWeight: 700 }}>
-              Frontend Mock State (Phase 2 Master Build)
+              Live MySQL / Express REST API (Full Integration)
             </span>
           </div>
           <div className="details-key-val-item">

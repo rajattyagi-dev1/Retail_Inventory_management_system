@@ -3,25 +3,22 @@ import SectionHeader from '../common/SectionHeader';
 import DataTable from '../common/DataTable';
 import StatusBadge from '../common/StatusBadge';
 import { useOrders } from '../../hooks/useOrders';
-import { MOCK_RECENT_ORDERS } from '../../utils/mockData';
 
 /**
  * Recent sales orders table.
  */
 export default function RecentOrdersTable() {
-  const { orders } = useOrders();
+  const { orders, loading } = useOrders();
 
-  const displayData = (orders && orders.length > 0)
-    ? orders.slice(0, 5).map((o) => ({
-        id: o.id,
-        orderNumber: o.orderNumber,
-        customer: o.customerName,
-        itemsCount: (o.items || []).reduce((sum, item) => sum + (item.quantity || 1), 0),
-        amount: `₹${(o.totalAmount || 0).toLocaleString('en-IN')}`,
-        status: o.status,
-        date: o.orderDate,
-      }))
-    : MOCK_RECENT_ORDERS;
+  const displayData = (orders || []).slice(0, 5).map((o) => ({
+    id: o.id,
+    orderNumber: o.orderNumber,
+    customer: o.customerName,
+    itemsCount: (o.items || []).reduce((sum, item) => sum + (item.quantity || 1), 0),
+    amount: `₹${(o.totalAmount || 0).toLocaleString('en-IN')}`,
+    status: o.status,
+    date: o.orderDate,
+  }));
   const columns = [
     {
       key: 'orderNumber',
@@ -85,7 +82,10 @@ export default function RecentOrdersTable() {
       <DataTable
         columns={columns}
         data={displayData}
+        loading={loading}
         keyExtractor={(item) => item.id}
+        emptyTitle="No recent orders"
+        emptyMessage="No customer sales orders have been placed yet."
       />
     </div>
   );

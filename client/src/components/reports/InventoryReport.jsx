@@ -1,59 +1,68 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWarehouses } from '../../hooks/useWarehouses';
 import { useInventory } from '../../hooks/useInventory';
-import { useProducts } from '../../hooks/useProducts';
 import DataTable from '../common/DataTable';
 import StatusBadge from '../common/StatusBadge';
+import reportService from '../../services/reportService';
 
 export default function InventoryReport({ warehouseFilter, categoryFilter }) {
   const { warehouses } = useWarehouses();
   const { inventory } = useInventory();
-  const { categories } = useProducts();
 
-  // 1. Warehouse breakdown
-  const warehouseStats = warehouses
-    .filter((w) => warehouseFilter === 'ALL' || w.name === warehouseFilter || w.id === warehouseFilter)
-    .map((wh) => {
-      const items = inventory.filter(
-        (i) => String(i.warehouseId) === String(wh.id) || i.warehouseName === wh.name
-      );
-      const totalUnits = items.reduce((acc, i) => acc + (i.currentStock || 0), 0);
-      const lowStock = items.filter((i) => i.stockStatus === 'LOW_STOCK').length;
-      const outOfStock = items.filter((i) => i.stockStatus === 'OUT_OF_STOCK').length;
-      const utilization = wh.capacity > 0 ? Math.round((totalUnits / wh.capacity) * 100) : 0;
+  const [reportData, setReportData] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-      return {
-        id: wh.id,
-        name: wh.name,
-        code: wh.code,
-        skus: items.length,
-        units: totalUnits,
-        capacity: wh.capacity,
-        lowStock,
-        outOfStock,
-        utilization,
-      };
-    });
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    reportService
+      .getInventoryReport({
+        warehouseId: warehouseFilter !== 'ALL' ? warehouseFilter : undefined,
+        categoryId: categoryFilter !== 'ALL' ? categoryFilter : undefined,
+      })
+      .then((res) => {
+        if (mounted && res && res.data) {
+          setReportData(res.data);
+        }
+      })
+      .catch((err) => console.error('Failed to load inventory report:', err))
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [warehouseFilter, categoryFilter]);
 
-  // 2. Category breakdown
-  const categoryStats = categories
-    .filter((c) => categoryFilter === 'ALL' || c.name === categoryFilter)
-    .map((cat) => {
-      const catItems = inventory.filter((i) => i.category === cat.name);
-      const totalUnits = catItems.reduce((acc, i) => acc + (i.currentStock || 0), 0);
-      const lowStock = catItems.filter((i) => i.stockStatus === 'LOW_STOCK').length;
-      const distinctSkus = new Set(catItems.map((i) => i.sku)).size;
+  // Map backend warehouseBreakdown
+  const warehouseStats = (reportData?.warehouseBreakdown || []).map((wh) => {
+    const matchedWh = warehouses.find((w) => String(w.id) === String(wh.warehouseId));
+    const capacity = matchedWh?.capacity || 50000;
+    const utilization = capacity > 0 ? Math.round((wh.currentStock / capacity) * 100) : 0;
 
-      return {
-        id: cat.id,
-        name: cat.name,
-        skus: distinctSkus,
-        units: totalUnits,
-        lowStock,
-      };
-    });
+    return {
+      id: wh.warehouseId,
+      name: wh.warehouseName,
+      code: wh.warehouseCode,
+      skus: wh.itemCount,
+      units: wh.currentStock,
+      capacity,
+      lowStock: wh.lowStockItems,
+      outOfStock: wh.outOfStockItems,
+      utilization,
+    };
+  });
 
-  // 3. Low stock & Out of stock exception list
+  // Map backend categoryBreakdown
+  const categoryStats = (reportData?.categoryBreakdown || []).map((cat, idx) => ({
+    id: idx + 1,
+    name: cat.categoryName,
+    skus: cat.itemCount,
+    units: cat.totalStock,
+    stockValue: cat.stockValue,
+  }));
+
+  // Low stock & Out of stock exception list from current inventory
   const exceptionItems = inventory.filter(
     (i) => i.stockStatus === 'LOW_STOCK' || i.stockStatus === 'OUT_OF_STOCK'
   );
@@ -207,6 +216,7 @@ export default function InventoryReport({ warehouseFilter, categoryFilter }) {
         <DataTable
           columns={whColumns}
           data={warehouseStats}
+          loading={loading}
           keyExtractor={(w) => w.id}
           emptyTitle="No warehouse data"
         />
@@ -225,6 +235,7 @@ export default function InventoryReport({ warehouseFilter, categoryFilter }) {
         <DataTable
           columns={catColumns}
           data={categoryStats}
+          loading={loading}
           keyExtractor={(c) => c.id}
           emptyTitle="No category data"
         />

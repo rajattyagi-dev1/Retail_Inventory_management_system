@@ -1,9 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft,
   Building2,
-  MapPin,
   Mail,
   Phone,
   CreditCard,
@@ -14,24 +13,78 @@ import {
   Edit,
   ShieldCheck,
 } from 'lucide-react';
-import { useSuppliers } from '../../hooks/useSuppliers';
+import supplierService from '../../services/supplierService';
+import purchaseOrderService from '../../services/purchaseOrderService';
 import StatusBadge from '../../components/common/StatusBadge';
 import EmptyState from '../../components/common/EmptyState';
 import DataTable from '../../components/common/DataTable';
 import SectionHeader from '../../components/common/SectionHeader';
+import LoadingState from '../../components/common/LoadingState';
 
 export default function SupplierDetailsPage() {
   const { id } = useParams();
-  const { getSupplierById } = useSuppliers();
 
-  const supplier = getSupplierById(id);
+  const [supplier, setSupplier] = useState(null);
+  const [productsSuppliedList, setProductsSuppliedList] = useState([]);
+  const [recentPOs, setRecentPOs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  if (!supplier) {
+  useEffect(() => {
+    let isMounted = true;
+    async function loadSupplierData() {
+      setLoading(true);
+      setError(null);
+      try {
+        const [supData, prodsData, posData] = await Promise.all([
+          supplierService.getSupplierById(id),
+          supplierService.getSupplierProducts(id).catch(() => []),
+          purchaseOrderService.getPurchaseOrders({ supplierId: id }).catch(() => ({ data: [] })),
+        ]);
+
+        if (isMounted) {
+          setSupplier(supData);
+          setProductsSuppliedList(
+            (prodsData || []).map((sp) => ({
+              id: sp.productId || sp.product?.id || sp.id,
+              name: sp.product?.name || sp.productName || 'Catalog Item',
+              sku: sp.product?.sku || sp.supplierSku || 'SKU-000',
+              category: sp.product?.category?.name || 'General',
+              unitPrice: sp.costPrice ? Number(sp.costPrice) : (sp.product?.costPrice ? Number(sp.product.costPrice) : 0),
+              leadTimeDays: sp.leadTimeDays ?? 7,
+            }))
+          );
+          setRecentPOs(posData.data || []);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(err.message || 'Failed to load supplier profile');
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    if (id) {
+      loadSupplierData();
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [id]);
+
+  if (loading) {
+    return <LoadingState message="Loading supplier profile and commercial history..." />;
+  }
+
+  if (error || !supplier) {
     return (
       <div className="product-module-page">
         <EmptyState
           title="Supplier Not Found"
-          message={`No supplier matching identifier "${id}" exists in active records.`}
+          message={error || `No supplier matching identifier "${id}" exists in active records.`}
           action={
             <Link to="/suppliers" className="btn-sm btn-primary">
               <ArrowLeft size={15} />
@@ -43,53 +96,11 @@ export default function SupplierDetailsPage() {
     );
   }
 
-  // Realistic mock data for products supplied by this vendor
-  const productsSuppliedList = [
-    {
-      id: 'prod-101',
-      name: 'Apple iPhone 15 (128 GB) - Black',
-      sku: 'SKU-APL-IP15',
-      category: 'Electronics',
-      unitPrice: 62000,
-      lastOrdered: '2026-09-15',
-    },
-    {
-      id: 'prod-102',
-      name: 'Samsung Galaxy S25 5G (256 GB) - Titanium Gray',
-      sku: 'SKU-SAM-S25',
-      category: 'Electronics',
-      unitPrice: 68500,
-      lastOrdered: '2026-09-18',
-    },
-    {
-      id: 'prod-106',
-      name: 'OnePlus 12R 5G (Cool Blue, 16GB RAM, 256GB)',
-      sku: 'SKU-OP-12R',
-      category: 'Electronics',
-      unitPrice: 34000,
-      lastOrdered: '2026-09-22',
-    },
-  ];
-
-  // Realistic mock recent purchase orders for this supplier
-  const recentPOs = [
-    {
-      id: 'po-1',
-      poNumber: 'PO-2026-0012',
-      orderDate: '2026-09-15',
-      expectedDate: '2026-09-28',
-      amount: 1240000,
-      status: 'RECEIVED',
-    },
-    {
-      id: 'po-3',
-      poNumber: 'PO-2026-0034',
-      orderDate: '2026-09-24',
-      expectedDate: '2026-10-05',
-      amount: 680000,
-      status: 'APPROVED',
-    },
-  ];
+  // Calculate live statistics from real orders
+  const totalBilledValue = recentPOs.reduce((acc, po) => acc + (Number(po.total) || Number(po.totalAmount) || 0), 0);
+  const openOrdersCount = recentPOs.filter(
+    (po) => po.status === 'PENDING' || po.status === 'APPROVED' || po.status === 'PARTIALLY_RECEIVED'
+  ).length;
 
   const productColumns = [
     {
@@ -118,17 +129,23 @@ export default function SupplierDetailsPage() {
       key: 'unitPrice',
       header: 'Contract Rate',
       align: 'right',
+      width: '130px',
       render: (row) => (
         <span className="table-num" style={{ fontWeight: 600 }}>
-          ₹{row.unitPrice.toLocaleString('en-IN')}
+          ₹{(row.unitPrice || 0).toLocaleString('en-IN')}
         </span>
       ),
     },
     {
-      key: 'lastOrdered',
-      header: 'Last Ordered',
+      key: 'leadTimeDays',
+      header: 'Lead Time',
       align: 'right',
-      render: (row) => <span style={{ fontSize: '12px', color: '#64748b' }}>{row.lastOrdered}</span>,
+      width: '120px',
+      render: (row) => (
+        <span style={{ color: '#64748b', fontSize: '13px' }}>
+          {row.leadTimeDays} days
+        </span>
+      ),
     },
   ];
 
@@ -136,8 +153,9 @@ export default function SupplierDetailsPage() {
     {
       key: 'poNumber',
       header: 'PO Number',
+      width: '150px',
       render: (row) => (
-        <Link to={`/purchase-orders/${row.id}`} className="product-table-name-link">
+        <Link to={`/purchase-orders/${row.id}`} className="product-table-name-link" style={{ fontFamily: 'monospace' }}>
           {row.poNumber}
         </Link>
       ),
@@ -145,26 +163,29 @@ export default function SupplierDetailsPage() {
     {
       key: 'orderDate',
       header: 'Order Date',
-      render: (row) => <span style={{ fontSize: '12.5px', color: '#475569' }}>{row.orderDate}</span>,
+      width: '130px',
+      render: (row) => <span style={{ color: '#64748b', fontSize: '12px' }}>{row.orderDate}</span>,
     },
     {
       key: 'expectedDate',
-      header: 'Expected Delivery',
-      render: (row) => <span style={{ fontSize: '12.5px', color: '#64748b' }}>{row.expectedDate}</span>,
+      header: 'Fulfillment Date',
+      width: '140px',
+      render: (row) => <span style={{ color: '#64748b', fontSize: '12px' }}>{row.expectedDate || '—'}</span>,
     },
     {
-      key: 'amount',
-      header: 'Order Amount',
+      key: 'total',
+      header: 'Order Value',
       align: 'right',
+      width: '140px',
       render: (row) => (
         <span className="table-num" style={{ fontWeight: 700, color: '#0f172a' }}>
-          ₹{row.amount.toLocaleString('en-IN')}
+          ₹{(Number(row.total) || Number(row.totalAmount) || 0).toLocaleString('en-IN')}
         </span>
       ),
     },
     {
       key: 'status',
-      header: 'PO Status',
+      header: 'Status',
       width: '140px',
       render: (row) => <StatusBadge status={row.status} />,
     },
@@ -172,7 +193,7 @@ export default function SupplierDetailsPage() {
 
   return (
     <div className="product-module-page">
-      {/* Top Header */}
+      {/* Header Bar */}
       <div className="form-header-bar">
         <div>
           <Link to="/suppliers" className="form-back-link">
@@ -181,16 +202,14 @@ export default function SupplierDetailsPage() {
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: 4, flexWrap: 'wrap' }}>
             <h2 className="form-page-title">{supplier.name}</h2>
+            <span className="sku-code" style={{ fontSize: '13px', padding: '3px 8px' }}>
+              {supplier.supplierCode}
+            </span>
             <StatusBadge status={supplier.status} />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: 6, color: '#64748b', fontSize: '12.5px', flexWrap: 'wrap' }}>
-            <span className="sku-code">{supplier.supplierCode}</span>
-            <span>&bull;</span>
-            <span>{supplier.companyName}</span>
-            <span>&bull;</span>
-            <MapPin size={13} />
-            <span>{supplier.city}, {supplier.state}</span>
-          </div>
+          <p className="form-page-subtitle">
+            {supplier.companyName} &bull; Key partner managing {productsSuppliedList.length} catalog SKU replenishment lines.
+          </p>
         </div>
 
         <div className="form-top-actions">
@@ -200,12 +219,12 @@ export default function SupplierDetailsPage() {
           </Link>
           <Link to="/purchase-orders/new" className="btn-sm btn-primary">
             <FileSpreadsheet size={15} />
-            <span>Create PO</span>
+            <span>Generate PO</span>
           </Link>
         </div>
       </div>
 
-      {/* 4 Summary Cards */}
+      {/* 4 Metric Cards */}
       <div className="stats-grid" style={{ marginBottom: '24px' }}>
         <div className="stat-card">
           <div className="stat-card-top">
@@ -214,7 +233,7 @@ export default function SupplierDetailsPage() {
               <Package size={20} />
             </div>
           </div>
-          <div className="stat-card-value">{supplier.productsSupplied || productsSuppliedList.length}</div>
+          <div className="stat-card-value">{productsSuppliedList.length}</div>
           <div className="stat-card-bottom">
             <span className="stat-card-subtext">Active contract product lines</span>
           </div>
@@ -222,29 +241,31 @@ export default function SupplierDetailsPage() {
 
         <div className="stat-card">
           <div className="stat-card-top">
-            <span className="stat-card-label">Purchase Orders</span>
+            <span className="stat-card-label">Lifetime Purchase Orders</span>
             <div className="stat-card-icon-wrap" style={{ color: '#059669', backgroundColor: '#ecfdf5' }}>
               <FileSpreadsheet size={20} />
             </div>
           </div>
-          <div className="stat-card-value">14</div>
+          <div className="stat-card-value" style={{ color: '#047857' }}>
+            {recentPOs.length}
+          </div>
           <div className="stat-card-bottom">
-            <span className="stat-card-subtext">Lifetime PO transactions</span>
+            <span className="stat-card-subtext">Total procurement orders issued</span>
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-card-top">
-            <span className="stat-card-label">Total Procured Value</span>
+            <span className="stat-card-label">Total Procurement Value</span>
             <div className="stat-card-icon-wrap" style={{ color: '#7c3aed', backgroundColor: '#f5f3ff' }}>
               <IndianRupee size={20} />
             </div>
           </div>
           <div className="stat-card-value" style={{ fontSize: '20px' }}>
-            ₹1.92 Cr
+            ₹{totalBilledValue.toLocaleString('en-IN')}
           </div>
           <div className="stat-card-bottom">
-            <span className="stat-card-subtext">Gross billed merchandise value</span>
+            <span className="stat-card-subtext">Total procurement billed</span>
           </div>
         </div>
 
@@ -256,7 +277,7 @@ export default function SupplierDetailsPage() {
             </div>
           </div>
           <div className="stat-card-value" style={{ color: '#b45309' }}>
-            1 Order
+            {openOrdersCount} Orders
           </div>
           <div className="stat-card-bottom">
             <span className="stat-card-subtext">In-transit or awaiting fulfillment</span>
@@ -276,28 +297,28 @@ export default function SupplierDetailsPage() {
           <div className="details-key-val-grid">
             <div className="details-key-val-item">
               <span className="details-key">Key Relationship Manager</span>
-              <span className="details-val">{supplier.contactPerson}</span>
+              <span className="details-val">{supplier.contactPerson || '—'}</span>
             </div>
             <div className="details-key-val-item">
               <span className="details-key">Direct Email</span>
               <span className="details-val" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <Mail size={13} color="#64748b" /> {supplier.email}
+                <Mail size={13} color="#64748b" /> {supplier.email || '—'}
               </span>
             </div>
             <div className="details-key-val-item">
               <span className="details-key">Phone Contact</span>
               <span className="details-val" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <Phone size={13} color="#64748b" /> {supplier.phone}
+                <Phone size={13} color="#64748b" /> {supplier.phone || '—'}
               </span>
             </div>
             <div className="details-key-val-item">
               <span className="details-key">Merchandise Segment</span>
-              <span className="details-val">{supplier.category}</span>
+              <span className="details-val">{supplier.category || 'General Merchandise'}</span>
             </div>
             <div className="details-key-val-item" style={{ gridColumn: '1 / -1' }}>
               <span className="details-key">Registered Facility / Office Address</span>
               <span className="details-val">
-                {supplier.address ? `${supplier.address}, ` : ''}{supplier.city}, {supplier.state} — {supplier.pincode}
+                {supplier.address ? `${supplier.address}, ` : ''}{supplier.city ? `${supplier.city}, ` : ''}{supplier.state || ''} {supplier.pincode ? `— ${supplier.pincode}` : ''}
               </span>
             </div>
           </div>
@@ -322,7 +343,7 @@ export default function SupplierDetailsPage() {
             <div className="details-key-val-item">
               <span className="details-key">Payment Settlement Terms</span>
               <span className="details-val" style={{ fontWeight: 700, color: '#0f172a' }}>
-                {supplier.paymentTerms}
+                {supplier.paymentTerms || 'Net 30'}
               </span>
             </div>
             <div className="details-key-val-item">
@@ -333,7 +354,7 @@ export default function SupplierDetailsPage() {
             </div>
             <div className="details-key-val-item">
               <span className="details-key">Vendor Since</span>
-              <span className="details-val">{supplier.createdAt}</span>
+              <span className="details-val">{supplier.createdAt ? String(supplier.createdAt).split('T')[0] : '—'}</span>
             </div>
           </div>
 

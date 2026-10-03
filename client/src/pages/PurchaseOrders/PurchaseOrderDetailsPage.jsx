@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -9,18 +9,44 @@ import {
   IndianRupee,
 } from 'lucide-react';
 import { usePurchaseOrders } from '../../hooks/usePurchaseOrders';
+import purchaseOrderService from '../../services/purchaseOrderService';
 import StatusBadge from '../../components/common/StatusBadge';
 import EmptyState from '../../components/common/EmptyState';
 import DataTable from '../../components/common/DataTable';
 import ReceiveGoodsModal from '../../components/purchaseOrders/ReceiveGoodsModal';
+import LoadingState from '../../components/common/LoadingState';
 
 export default function PurchaseOrderDetailsPage() {
   const { id } = useParams();
   const { getPurchaseOrderById, approvePurchaseOrder, cancelPurchaseOrder, receivePurchaseOrder } = usePurchaseOrders();
 
+  const cachedPo = getPurchaseOrderById(id);
+  const [po, setPo] = useState(cachedPo);
+  const [loading, setLoading] = useState(!cachedPo);
   const [receivingModalOpen, setReceivingModalOpen] = useState(false);
 
-  const po = getPurchaseOrderById(id);
+  useEffect(() => {
+    if (!cachedPo && id) {
+      setLoading(true);
+      purchaseOrderService
+        .getPurchaseOrderById(id)
+        .then((data) => {
+          if (data) setPo(data);
+        })
+        .catch((err) => {
+          console.error('Failed to load purchase order details:', err);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    } else if (cachedPo) {
+      setPo(cachedPo);
+    }
+  }, [cachedPo, id]);
+
+  if (loading) {
+    return <LoadingState message="Loading purchase order details..." />;
+  }
 
   if (!po) {
     return (
@@ -39,8 +65,31 @@ export default function PurchaseOrderDetailsPage() {
     );
   }
 
-  const handleConfirmReceipt = (quantitiesMap, notes, performedBy) => {
-    receivePurchaseOrder(po.id, quantitiesMap, notes, performedBy);
+  const handleApprove = async () => {
+    try {
+      const updated = await approvePurchaseOrder(po.id);
+      if (updated) setPo(updated);
+    } catch (err) {
+      console.error('Approval failed:', err);
+    }
+  };
+
+  const handleCancel = async () => {
+    try {
+      const updated = await cancelPurchaseOrder(po.id);
+      if (updated) setPo(updated);
+    } catch (err) {
+      console.error('Cancel failed:', err);
+    }
+  };
+
+  const handleConfirmReceipt = async (quantitiesMap, notes, performedBy) => {
+    try {
+      const updated = await receivePurchaseOrder(po.id, quantitiesMap, notes, performedBy);
+      if (updated) setPo(updated);
+    } catch (err) {
+      console.error('Receive failed:', err);
+    }
   };
 
   const itemColumns = [
@@ -129,7 +178,7 @@ export default function PurchaseOrderDetailsPage() {
       width: '130px',
       render: (row) => (
         <span className="table-num" style={{ fontWeight: 700, color: '#0f172a' }}>
-          ₹{(row.total || 0).toLocaleString('en-IN')}
+          ₹{(row.lineTotal || row.total || 0).toLocaleString('en-IN')}
         </span>
       ),
     },
@@ -151,7 +200,7 @@ export default function PurchaseOrderDetailsPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: 6, color: '#64748b', fontSize: '12.5px', flexWrap: 'wrap' }}>
             <span>Ordered on: <strong>{po.orderDate}</strong></span>
             <span>&bull;</span>
-            <span>Expected by: <strong>{po.expectedDate}</strong></span>
+            <span>Expected by: <strong>{po.expectedDate || 'Standard Delivery'}</strong></span>
             <span>&bull;</span>
             <span>Created by: {po.createdBy}</span>
           </div>
@@ -163,7 +212,7 @@ export default function PurchaseOrderDetailsPage() {
               type="button"
               className="btn-sm btn-primary"
               style={{ backgroundColor: '#059669', borderColor: '#047857' }}
-              onClick={() => approvePurchaseOrder(po.id)}
+              onClick={handleApprove}
             >
               <CheckCircle size={15} />
               <span>Approve PO</span>
@@ -186,7 +235,7 @@ export default function PurchaseOrderDetailsPage() {
               type="button"
               className="btn-sm btn-secondary"
               style={{ color: '#dc2626' }}
-              onClick={() => cancelPurchaseOrder(po.id)}
+              onClick={handleCancel}
             >
               <Ban size={15} />
               <span>Cancel Order</span>
@@ -228,7 +277,7 @@ export default function PurchaseOrderDetailsPage() {
             <div className="details-key-val-item">
               <span className="details-key">Target Fulfillment Date</span>
               <span className="details-val" style={{ color: '#d97706', fontWeight: 600 }}>
-                {po.expectedDate}
+                {po.expectedDate || '—'}
               </span>
             </div>
             <div className="details-key-val-item" style={{ gridColumn: '1 / -1' }}>
@@ -249,23 +298,27 @@ export default function PurchaseOrderDetailsPage() {
 
           <div className="details-key-val-grid">
             <div className="details-key-val-item">
-              <span className="details-key">Net Merchandise Subtotal</span>
-              <span className="details-val">₹{(po.subtotal || 0).toLocaleString('en-IN')}</span>
-            </div>
-            <div className="details-key-val-item">
-              <span className="details-key">Applicable GST / Taxes (18%)</span>
-              <span className="details-val">₹{(po.tax || 0).toLocaleString('en-IN')}</span>
-            </div>
-            <div className="details-key-val-item">
-              <span className="details-key">Gross Total Payable</span>
-              <span className="details-val" style={{ fontSize: '18px', color: '#0f172a', fontWeight: 700 }}>
-                ₹{(po.total || 0).toLocaleString('en-IN')}
+              <span className="details-key">Merchandise Subtotal</span>
+              <span className="details-val">
+                ₹{(po.subtotal || 0).toLocaleString('en-IN')}
               </span>
             </div>
             <div className="details-key-val-item">
-              <span className="details-key">Fulfillment Progression</span>
+              <span className="details-key">Applicable GST Tax</span>
               <span className="details-val">
-                <StatusBadge status={po.status} />
+                ₹{(po.tax || 0).toLocaleString('en-IN')}
+              </span>
+            </div>
+            <div className="details-key-val-item">
+              <span className="details-key">Logistics / Freight</span>
+              <span className="details-val">
+                ₹{(po.shipping || 0).toLocaleString('en-IN')}
+              </span>
+            </div>
+            <div className="details-key-val-item">
+              <span className="details-key">Total PO Valuation</span>
+              <span className="details-val" style={{ fontWeight: 800, color: '#059669', fontSize: '16px' }}>
+                ₹{(po.total || po.totalAmount || 0).toLocaleString('en-IN')}
               </span>
             </div>
           </div>
@@ -273,10 +326,10 @@ export default function PurchaseOrderDetailsPage() {
           <div
             style={{
               marginTop: '16px',
-              padding: '12px 14px',
-              backgroundColor: '#f8fafc',
-              borderRadius: '8px',
-              border: '1px solid #e2e8f0',
+              padding: '10px 12px',
+              backgroundColor: '#eff6ff',
+              borderRadius: '6px',
+              border: '1px solid #bfdbfe',
               fontSize: '12px',
               color: '#475569',
             }}

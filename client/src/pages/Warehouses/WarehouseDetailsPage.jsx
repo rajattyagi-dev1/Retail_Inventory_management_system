@@ -20,7 +20,7 @@ import EmptyState from '../../components/common/EmptyState';
 import LoadingState from '../../components/common/LoadingState';
 import DataTable from '../../components/common/DataTable';
 import SectionHeader from '../../components/common/SectionHeader';
-import { MOCK_WAREHOUSE_INVENTORY_ITEMS } from '../../utils/warehouseMockData';
+import inventoryService from '../../services/inventoryService';
 
 /**
  * Warehouse Details Page (/warehouses/:id).
@@ -31,6 +31,8 @@ export default function WarehouseDetailsPage() {
   const { fetchWarehouse, toggleWarehouseStatus } = useWarehouses();
 
   const [warehouse, setWarehouse] = useState(null);
+  const [warehouseInventory, setWarehouseInventory] = useState([]);
+  const [inventoryLoading, setInventoryLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -49,6 +51,20 @@ export default function WarehouseDetailsPage() {
           setError(err.message || 'Warehouse not found.');
           setLoading(false);
         }
+      });
+
+    inventoryService
+      .getInventoryByWarehouse(id, { limit: 100 })
+      .then((res) => {
+        if (isMounted && res && res.data) {
+          setWarehouseInventory(res.data);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load warehouse inventory:', err);
+      })
+      .finally(() => {
+        if (isMounted) setInventoryLoading(false);
       });
 
     return () => {
@@ -124,11 +140,14 @@ export default function WarehouseDetailsPage() {
       header: 'On-Hand Stock',
       align: 'right',
       width: '130px',
-      render: (row) => (
-        <span className="table-num" style={{ fontWeight: 700, color: row.stock === 0 ? '#ef4444' : '#0f172a' }}>
-          {row.stock} units
-        </span>
-      ),
+      render: (row) => {
+        const stock = row.currentStock !== undefined ? row.currentStock : (row.stock || 0);
+        return (
+          <span className="table-num" style={{ fontWeight: 700, color: stock === 0 ? '#ef4444' : '#0f172a' }}>
+            {stock} units
+          </span>
+        );
+      },
     },
     {
       key: 'stockStatus',
@@ -387,34 +406,23 @@ export default function WarehouseDetailsPage() {
         </div>
       </div>
 
-      {/* Mock Section: Inventory Overview */}
+      {/* Live Warehouse Inventory Section */}
       <div className="card" style={{ marginTop: '24px', overflow: 'hidden' }}>
         <div style={{ padding: '20px 20px 12px 20px' }}>
           <SectionHeader
-            title="Inventory Overview"
+            title="Warehouse Inventory Overview"
             subtitle="Current SKU on-hand levels stored inside this regional fulfillment facility"
-            badge="Mock Demonstration"
+            badge={`${warehouseInventory.length} SKUs Allocated`}
           />
-          {/* Architectural Note */}
-          <div
-            style={{
-              fontSize: '12px',
-              color: '#64748b',
-              backgroundColor: '#f8fafc',
-              border: '1px dashed #cbd5e1',
-              borderRadius: '6px',
-              padding: '8px 12px',
-              marginBottom: '14px',
-            }}
-          >
-            <strong>Architectural Note:</strong> This inventory data is <em>MOCK ONLY</em> for UI demonstration. In upcoming sprints, this section will be populated dynamically from: <code>Warehouse &rarr; Inventory &rarr; Product</code> relationships.
-          </div>
         </div>
 
         <DataTable
           columns={inventoryColumns}
-          data={MOCK_WAREHOUSE_INVENTORY_ITEMS}
+          data={warehouseInventory}
+          loading={inventoryLoading}
           keyExtractor={(item) => item.id}
+          emptyTitle="No inventory allocated"
+          emptyMessage="No stock records currently exist for this warehouse node."
         />
       </div>
     </div>

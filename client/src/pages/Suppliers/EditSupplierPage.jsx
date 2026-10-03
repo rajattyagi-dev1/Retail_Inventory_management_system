@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -9,7 +9,9 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { useSuppliers } from '../../hooks/useSuppliers';
+import supplierService from '../../services/supplierService';
 import EmptyState from '../../components/common/EmptyState';
+import LoadingState from '../../components/common/LoadingState';
 
 const CATEGORY_OPTIONS = ['Electronics', 'Accessories', 'Clothing', 'Home Appliances', 'General Merchandise'];
 const PAYMENT_TERM_OPTIONS = ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Advance', 'COD'];
@@ -19,26 +21,68 @@ export default function EditSupplierPage() {
   const navigate = useNavigate();
   const { getSupplierById, updateSupplier } = useSuppliers();
 
-  const supplier = getSupplierById(id);
+  const cachedSupplier = getSupplierById(id);
+  const [supplier, setSupplier] = useState(cachedSupplier);
+  const [loading, setLoading] = useState(!cachedSupplier);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [formData, setFormData] = useState(() => ({
-    name: supplier?.name || '',
-    supplierCode: supplier?.supplierCode || '',
-    companyName: supplier?.companyName || '',
-    category: supplier?.category || CATEGORY_OPTIONS[0],
-    status: supplier?.status || 'ACTIVE',
-    contactPerson: supplier?.contactPerson || '',
-    email: supplier?.email || '',
-    phone: supplier?.phone || '',
-    address: supplier?.address || '',
-    city: supplier?.city || '',
-    state: supplier?.state || '',
-    pincode: supplier?.pincode || '',
-    gstNumber: supplier?.gstNumber || '',
-    paymentTerms: supplier?.paymentTerms || 'Net 30',
-  }));
+  const [formData, setFormData] = useState({
+    name: cachedSupplier?.name || '',
+    supplierCode: cachedSupplier?.supplierCode || '',
+    companyName: cachedSupplier?.companyName || '',
+    category: cachedSupplier?.category || CATEGORY_OPTIONS[0],
+    status: cachedSupplier?.status || 'ACTIVE',
+    contactPerson: cachedSupplier?.contactPerson || '',
+    email: cachedSupplier?.email || '',
+    phone: cachedSupplier?.phone || '',
+    address: cachedSupplier?.address || '',
+    city: cachedSupplier?.city || '',
+    state: cachedSupplier?.state || '',
+    pincode: cachedSupplier?.pincode || '',
+    gstNumber: cachedSupplier?.gstNumber || '',
+    paymentTerms: cachedSupplier?.paymentTerms || 'Net 30',
+  });
 
   const [errors, setErrors] = useState({});
+
+  useEffect(() => {
+    if (!cachedSupplier && id) {
+      setLoading(true);
+      supplierService
+        .getSupplierById(id)
+        .then((data) => {
+          if (data) {
+            setSupplier(data);
+            setFormData({
+              name: data.name || '',
+              supplierCode: data.supplierCode || '',
+              companyName: data.companyName || '',
+              category: data.category || CATEGORY_OPTIONS[0],
+              status: data.status || 'ACTIVE',
+              contactPerson: data.contactPerson || '',
+              email: data.email || '',
+              phone: data.phone || '',
+              address: data.address || '',
+              city: data.city || '',
+              state: data.state || '',
+              pincode: data.pincode || '',
+              gstNumber: data.gstNumber || '',
+              paymentTerms: data.paymentTerms || 'Net 30',
+            });
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to load supplier for editing:', err);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    }
+  }, [cachedSupplier, id]);
+
+  if (loading) {
+    return <LoadingState message="Loading supplier details..." />;
+  }
 
   if (!supplier) {
     return (
@@ -100,16 +144,22 @@ export default function EditSupplierPage() {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) return;
 
-    updateSupplier(supplier.id, {
-      ...formData,
-      gstNumber: formData.gstNumber.trim().toUpperCase(),
-    });
-
-    navigate(`/suppliers/${supplier.id}`);
+    setIsSubmitting(true);
+    try {
+      await updateSupplier(supplier.id, {
+        ...formData,
+        gstNumber: formData.gstNumber.trim().toUpperCase(),
+      });
+      navigate(`/suppliers/${supplier.id}`);
+    } catch (err) {
+      console.error('Update supplier failed:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -118,36 +168,67 @@ export default function EditSupplierPage() {
         <div>
           <Link to={`/suppliers/${supplier.id}`} className="form-back-link">
             <ArrowLeft size={16} />
-            <span>Back to Supplier Profile</span>
+            <span>Cancel & Back to Supplier</span>
           </Link>
-          <h2 className="form-page-title">Edit Supplier — {supplier.name}</h2>
+          <h2 className="form-page-title">Edit Supplier Profile</h2>
           <p className="form-page-subtitle">
-            Update commercial contacts, terms, and tax registration identifiers.
+            Update commercial credentials, GSTIN registration, and settlement terms for {supplier.name}.
           </p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} noValidate className="product-form-container">
-        {/* Section 1: Basic Info */}
+        {/* Section 1: Basic Information */}
         <div className="card form-section-card">
           <div className="form-section-header">
             <div className="form-section-icon">
               <Building2 size={18} />
             </div>
             <div>
-              <h3 className="form-section-title">Supplier Master Details</h3>
-              <p className="form-section-desc">Primary commercial naming and vendor categorization</p>
+              <h3 className="form-section-title">Supplier Identity</h3>
+              <p className="form-section-desc">Brand name, legal registration, and segment classification</p>
             </div>
           </div>
 
           <div className="form-grid">
             <div className="form-field">
-              <label htmlFor="name" className="form-label required">
-                Supplier Trade / Brand Name
+              <label htmlFor="edit-sup-code" className="form-label">
+                Supplier Code (System Assigned)
               </label>
               <input
                 type="text"
-                id="name"
+                id="edit-sup-code"
+                name="supplierCode"
+                className="form-input"
+                value={formData.supplierCode}
+                disabled
+                style={{ backgroundColor: '#f1f5f9', cursor: 'not-allowed', color: '#64748b' }}
+              />
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="edit-sup-status" className="form-label required">
+                Vendor Status
+              </label>
+              <select
+                id="edit-sup-status"
+                name="status"
+                className="form-select"
+                value={formData.status}
+                onChange={handleChange}
+              >
+                <option value="ACTIVE">Active (Eligible for POs)</option>
+                <option value="INACTIVE">Inactive (Procurement Frozen)</option>
+              </select>
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="edit-sup-name" className="form-label required">
+                Brand / Trade Name
+              </label>
+              <input
+                type="text"
+                id="edit-sup-name"
                 name="name"
                 className={`form-input ${errors.name ? 'error' : ''}`}
                 value={formData.name}
@@ -157,12 +238,12 @@ export default function EditSupplierPage() {
             </div>
 
             <div className="form-field">
-              <label htmlFor="companyName" className="form-label required">
-                Registered Company Legal Name
+              <label htmlFor="edit-sup-company" className="form-label required">
+                Registered Entity / Company Name
               </label>
               <input
                 type="text"
-                id="companyName"
+                id="edit-sup-company"
                 name="companyName"
                 className={`form-input ${errors.companyName ? 'error' : ''}`}
                 value={formData.companyName}
@@ -172,77 +253,46 @@ export default function EditSupplierPage() {
             </div>
 
             <div className="form-field">
-              <label htmlFor="supplierCode" className="form-label">
-                Supplier Code (Read-Only)
-              </label>
-              <input
-                type="text"
-                id="supplierCode"
-                name="supplierCode"
-                className="form-input readonly-input"
-                value={formData.supplierCode}
-                readOnly
-              />
-            </div>
-
-            <div className="form-field">
-              <label htmlFor="category" className="form-label required">
+              <label htmlFor="edit-sup-cat" className="form-label required">
                 Merchandise Category
               </label>
               <select
-                id="category"
+                id="edit-sup-cat"
                 name="category"
                 className="form-select"
                 value={formData.category}
                 onChange={handleChange}
               >
-                {CATEGORY_OPTIONS.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
+                {CATEGORY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
                   </option>
                 ))}
-              </select>
-            </div>
-
-            <div className="form-field">
-              <label htmlFor="status" className="form-label required">
-                Vendor Status
-              </label>
-              <select
-                id="status"
-                name="status"
-                className="form-select"
-                value={formData.status}
-                onChange={handleChange}
-              >
-                <option value="ACTIVE">Active (Ready for POs)</option>
-                <option value="ON_HOLD">On Hold (Pending Verification)</option>
-                <option value="INACTIVE">Inactive</option>
               </select>
             </div>
           </div>
         </div>
 
-        {/* Section 2: Contact Info */}
+        {/* Section 2: Contact Information */}
         <div className="card form-section-card">
           <div className="form-section-header">
             <div className="form-section-icon">
               <User size={18} />
             </div>
             <div>
-              <h3 className="form-section-title">Point of Contact</h3>
-              <p className="form-section-desc">Key relationship manager and communication details</p>
+              <h3 className="form-section-title">Key Contact Personnel</h3>
+              <p className="form-section-desc">Designated relationship manager for order escalations</p>
             </div>
           </div>
 
           <div className="form-grid">
             <div className="form-field">
-              <label htmlFor="contactPerson" className="form-label required">
-                Contact Person Name
+              <label htmlFor="edit-sup-contact" className="form-label required">
+                Primary Contact Person
               </label>
               <input
                 type="text"
-                id="contactPerson"
+                id="edit-sup-contact"
                 name="contactPerson"
                 className={`form-input ${errors.contactPerson ? 'error' : ''}`}
                 value={formData.contactPerson}
@@ -252,12 +302,12 @@ export default function EditSupplierPage() {
             </div>
 
             <div className="form-field">
-              <label htmlFor="email" className="form-label required">
-                Email Address
+              <label htmlFor="edit-sup-email" className="form-label required">
+                Official Business Email
               </label>
               <input
                 type="email"
-                id="email"
+                id="edit-sup-email"
                 name="email"
                 className={`form-input ${errors.email ? 'error' : ''}`}
                 value={formData.email}
@@ -267,12 +317,12 @@ export default function EditSupplierPage() {
             </div>
 
             <div className="form-field">
-              <label htmlFor="phone" className="form-label required">
-                Phone / Mobile
+              <label htmlFor="edit-sup-phone" className="form-label required">
+                Contact Phone Number
               </label>
               <input
-                type="text"
-                id="phone"
+                type="tel"
+                id="edit-sup-phone"
                 name="phone"
                 className={`form-input ${errors.phone ? 'error' : ''}`}
                 value={formData.phone}
@@ -283,26 +333,26 @@ export default function EditSupplierPage() {
           </div>
         </div>
 
-        {/* Section 3: Address Info */}
+        {/* Section 3: Physical Address */}
         <div className="card form-section-card">
           <div className="form-section-header">
             <div className="form-section-icon">
               <MapPin size={18} />
             </div>
             <div>
-              <h3 className="form-section-title">Registered Business Address</h3>
-              <p className="form-section-desc">Physical facility location for invoice and shipping dispatches</p>
+              <h3 className="form-section-title">Facility & Warehouse Address</h3>
+              <p className="form-section-desc">Dispatch source location for freight lead time calculation</p>
             </div>
           </div>
 
           <div className="form-grid">
-            <div className="form-field full-width">
-              <label htmlFor="address" className="form-label">
-                Street Address / Industrial Plot
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <label htmlFor="edit-sup-addr" className="form-label">
+                Street Address / Unit
               </label>
               <input
                 type="text"
-                id="address"
+                id="edit-sup-addr"
                 name="address"
                 className="form-input"
                 value={formData.address}
@@ -311,12 +361,12 @@ export default function EditSupplierPage() {
             </div>
 
             <div className="form-field">
-              <label htmlFor="city" className="form-label required">
-                City
+              <label htmlFor="edit-sup-city" className="form-label required">
+                City / Hub
               </label>
               <input
                 type="text"
-                id="city"
+                id="edit-sup-city"
                 name="city"
                 className={`form-input ${errors.city ? 'error' : ''}`}
                 value={formData.city}
@@ -326,12 +376,12 @@ export default function EditSupplierPage() {
             </div>
 
             <div className="form-field">
-              <label htmlFor="state" className="form-label required">
+              <label htmlFor="edit-sup-state" className="form-label required">
                 State
               </label>
               <input
                 type="text"
-                id="state"
+                id="edit-sup-state"
                 name="state"
                 className={`form-input ${errors.state ? 'error' : ''}`}
                 value={formData.state}
@@ -341,66 +391,67 @@ export default function EditSupplierPage() {
             </div>
 
             <div className="form-field">
-              <label htmlFor="pincode" className="form-label required">
-                PIN Code (6 digits)
+              <label htmlFor="edit-sup-pin" className="form-label required">
+                Postal PIN Code
               </label>
               <input
                 type="text"
-                id="pincode"
+                id="edit-sup-pin"
                 name="pincode"
-                maxLength={6}
                 className={`form-input ${errors.pincode ? 'error' : ''}`}
                 value={formData.pincode}
                 onChange={handleChange}
+                maxLength={6}
               />
               {errors.pincode && <span className="form-error-msg">{errors.pincode}</span>}
             </div>
           </div>
         </div>
 
-        {/* Section 4: Business Information */}
+        {/* Section 4: Tax & Commercial Terms */}
         <div className="card form-section-card">
           <div className="form-section-header">
             <div className="form-section-icon">
               <CreditCard size={18} />
             </div>
             <div>
-              <h3 className="form-section-title">Commercial & Compliance Terms</h3>
-              <p className="form-section-desc">Taxation identifiers and negotiated credit payment terms</p>
+              <h3 className="form-section-title">Commercial & Tax Credentials</h3>
+              <p className="form-section-desc">Indian GSTIN registration and invoice payment cycle</p>
             </div>
           </div>
 
           <div className="form-grid">
             <div className="form-field">
-              <label htmlFor="gstNumber" className="form-label">
-                GSTIN / Tax ID
+              <label htmlFor="edit-sup-gst" className="form-label">
+                GSTIN Number (15 Characters)
               </label>
               <input
                 type="text"
-                id="gstNumber"
+                id="edit-sup-gst"
                 name="gstNumber"
-                maxLength={15}
                 className={`form-input ${errors.gstNumber ? 'error' : ''}`}
                 value={formData.gstNumber}
                 onChange={handleChange}
+                maxLength={15}
+                style={{ textTransform: 'uppercase', letterSpacing: '1px' }}
               />
               {errors.gstNumber && <span className="form-error-msg">{errors.gstNumber}</span>}
             </div>
 
             <div className="form-field">
-              <label htmlFor="paymentTerms" className="form-label required">
-                Payment Terms
+              <label htmlFor="edit-sup-terms" className="form-label required">
+                Invoice Payment Settlement Terms
               </label>
               <select
-                id="paymentTerms"
+                id="edit-sup-terms"
                 name="paymentTerms"
                 className="form-select"
                 value={formData.paymentTerms}
                 onChange={handleChange}
               >
-                {PAYMENT_TERM_OPTIONS.map((term) => (
-                  <option key={term} value={term}>
-                    {term}
+                {PAYMENT_TERM_OPTIONS.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
                   </option>
                 ))}
               </select>
@@ -408,14 +459,19 @@ export default function EditSupplierPage() {
           </div>
         </div>
 
-        {/* Bottom Actions */}
-        <div className="form-bottom-actions">
-          <Link to={`/suppliers/${supplier.id}`} className="btn-sm btn-secondary">
+        {/* Form Action Buttons */}
+        <div className="form-actions-bottom">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => navigate(`/suppliers/${supplier.id}`)}
+            disabled={isSubmitting}
+          >
             Cancel
-          </Link>
-          <button type="submit" className="btn-sm btn-primary">
-            <CheckCircle2 size={15} />
-            <span>Save Changes</span>
+          </button>
+          <button type="submit" className="btn-primary" disabled={isSubmitting}>
+            <CheckCircle2 size={16} />
+            <span>{isSubmitting ? 'Saving Changes...' : 'Update Supplier Profile'}</span>
           </button>
         </div>
       </form>

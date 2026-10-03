@@ -2,24 +2,21 @@ import React from 'react';
 import { AlertTriangle, CheckCircle, Info, BellRing } from 'lucide-react';
 import SectionHeader from '../common/SectionHeader';
 import { useNotifications } from '../../hooks/useNotifications';
-import { MOCK_NOTIFICATIONS } from '../../utils/mockData';
 
 /**
  * System alert and notification stream widget.
  */
 export default function RecentNotifications() {
-  const { notifications, unreadCount } = useNotifications();
+  const { notifications, unreadCount, loading } = useNotifications();
 
-  const displayList = (notifications && notifications.length > 0)
-    ? notifications.slice(0, 5).map((n) => ({
-        id: n.id,
-        type: n.severity === 'CRITICAL' ? 'critical' : n.severity === 'WARNING' ? 'warning' : n.severity === 'SUCCESS' ? 'success' : 'info',
-        title: n.title,
-        message: n.message,
-        time: n.timestamp,
-        unread: !n.read,
-      }))
-    : MOCK_NOTIFICATIONS;
+  const displayList = (notifications || []).slice(0, 5).map((n) => ({
+    id: n.id,
+    type: n.severity === 'CRITICAL' ? 'critical' : n.severity === 'WARNING' ? 'warning' : n.severity === 'SUCCESS' ? 'success' : 'info',
+    title: n.title,
+    message: n.message,
+    time: n.timestamp || (n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''),
+    unread: !n.read,
+  }));
 
   return (
     <div className="card">
@@ -32,7 +29,16 @@ export default function RecentNotifications() {
       </div>
 
       <div className="notification-feed">
-        {displayList.map((item) => {
+        {loading ? (
+          <div style={{ padding: '24px 16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+            Loading notification feed...
+          </div>
+        ) : displayList.length === 0 ? (
+          <div style={{ padding: '24px 16px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
+            No recent alerts or notifications.
+          </div>
+        ) : (
+          displayList.map((item) => {
           let iconColor = '#2563eb';
           let bgColor = '#eff6ff';
           let IconComp = Info;
@@ -76,7 +82,7 @@ export default function RecentNotifications() {
               </div>
             </div>
           );
-        })}
+        }))}
       </div>
     </div>
   );

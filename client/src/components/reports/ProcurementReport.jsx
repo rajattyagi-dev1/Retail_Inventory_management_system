@@ -1,48 +1,57 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileSpreadsheet, Building2, CheckCircle2, Clock } from 'lucide-react';
-import { usePurchaseOrders } from '../../hooks/usePurchaseOrders';
 import { useSuppliers } from '../../hooks/useSuppliers';
 import DataTable from '../common/DataTable';
+import reportService from '../../services/reportService';
 
 export default function ProcurementReport() {
-  const { purchaseOrders } = usePurchaseOrders();
   const { suppliers } = useSuppliers();
+  const [reportData, setReportData] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // 1. Status breakdown metrics
-  const statusCounts = {
-    DRAFT: purchaseOrders.filter((p) => p.status === 'DRAFT').length,
-    PENDING: purchaseOrders.filter((p) => p.status === 'PENDING').length,
-    APPROVED: purchaseOrders.filter((p) => p.status === 'APPROVED').length,
-    PARTIALLY_RECEIVED: purchaseOrders.filter((p) => p.status === 'PARTIALLY_RECEIVED').length,
-    RECEIVED: purchaseOrders.filter((p) => p.status === 'RECEIVED').length,
-    CANCELLED: purchaseOrders.filter((p) => p.status === 'CANCELLED').length,
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    reportService
+      .getProcurementReport()
+      .then((res) => {
+        if (mounted && res && res.data) {
+          setReportData(res.data);
+        }
+      })
+      .catch((err) => console.error('Failed to load procurement report:', err))
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // 1. Status breakdown metrics from backend
+  const statusCounts = reportData?.kpis?.statusCounts || {
+    DRAFT: 0,
+    PENDING: 0,
+    APPROVED: 0,
+    PARTIALLY_RECEIVED: 0,
+    RECEIVED: 0,
+    CANCELLED: 0,
   };
 
-  const totalValue = purchaseOrders
-    .filter((p) => p.status !== 'CANCELLED')
-    .reduce((acc, p) => acc + (p.total || 0), 0);
+  const totalValue = reportData?.kpis?.totalSpend || 0;
 
-  // 2. Supplier spend summary
-  const supplierSpend = suppliers.map((sup) => {
-    const supPOs = purchaseOrders.filter(
-      (p) => String(p.supplierId) === String(sup.id) || p.supplierName === sup.name
-    );
-    const totalSpend = supPOs
-      .filter((p) => p.status !== 'CANCELLED')
-      .reduce((acc, p) => acc + (p.total || 0), 0);
-    const pendingSpend = supPOs
-      .filter((p) => p.status === 'PENDING' || p.status === 'APPROVED')
-      .reduce((acc, p) => acc + (p.total || 0), 0);
-
+  // 2. Supplier spend summary from backend supplierBreakdown
+  const supplierSpend = (reportData?.supplierBreakdown || []).map((sup) => {
+    const matchedSup = suppliers.find((s) => String(s.id) === String(sup.supplierId));
     return {
-      id: sup.id,
-      name: sup.name,
-      code: sup.supplierCode,
-      category: sup.category,
-      city: sup.city,
-      poCount: supPOs.length,
-      totalSpend,
-      pendingSpend,
+      id: sup.supplierId,
+      name: sup.supplierName,
+      code: sup.supplierCode || matchedSup?.supplierCode || 'SUP',
+      category: matchedSup?.category || 'General Supplies',
+      city: matchedSup?.city || 'India',
+      poCount: sup.orderCount,
+      totalSpend: sup.totalSpend,
+      pendingSpend: 0,
     };
   });
 
@@ -175,6 +184,7 @@ export default function ProcurementReport() {
         <DataTable
           columns={supplierColumns}
           data={supplierSpend}
+          loading={loading}
           keyExtractor={(s) => s.id}
           emptyTitle="No supplier procurement data"
         />

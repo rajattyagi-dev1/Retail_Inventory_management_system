@@ -1,43 +1,51 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShoppingCart, Clock, Package, Truck, CheckCircle2, Ban } from 'lucide-react';
-import { useOrders } from '../../hooks/useOrders';
-import { useWarehouses } from '../../hooks/useWarehouses';
 import DataTable from '../common/DataTable';
+import reportService from '../../services/reportService';
 
 export default function OrderReport() {
-  const { orders } = useOrders();
-  const { warehouses } = useWarehouses();
+  const [reportData, setReportData] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const totalOrders = orders.length;
-  const pendingOrders = orders.filter((o) => o.status === 'PENDING' || o.status === 'CONFIRMED').length;
-  const processingOrders = orders.filter((o) => ['PROCESSING', 'PICKING', 'PACKED'].includes(o.status)).length;
-  const shippedOrders = orders.filter((o) => o.status === 'SHIPPED').length;
-  const deliveredOrders = orders.filter((o) => o.status === 'DELIVERED').length;
-  const cancelledOrders = orders.filter((o) => o.status === 'CANCELLED').length;
-
-  // Warehouse fulfillment volume
-  const warehouseVolume = warehouses.map((wh) => {
-    const whOrders = orders.filter(
-      (o) => String(o.warehouseId) === String(wh.id) || o.warehouseName === wh.name
-    );
-    const completedOrders = whOrders.filter((o) => o.status === 'SHIPPED' || o.status === 'DELIVERED').length;
-    const unitsDispatched = whOrders
-      .filter((o) => o.status === 'SHIPPED' || o.status === 'DELIVERED')
-      .reduce((acc, o) => acc + (o.items || []).reduce((sum, item) => sum + (item.quantity || 1), 0), 0);
-    const revenue = whOrders
-      .filter((o) => o.status !== 'CANCELLED')
-      .reduce((acc, o) => acc + (o.totalAmount || 0), 0);
-
-    return {
-      id: wh.id,
-      name: wh.name,
-      code: wh.code,
-      totalOrders: whOrders.length,
-      completedOrders,
-      unitsDispatched,
-      revenue,
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    reportService
+      .getOrderReport()
+      .then((res) => {
+        if (mounted && res && res.data) {
+          setReportData(res.data);
+        }
+      })
+      .catch((err) => console.error('Failed to load order report:', err))
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
     };
-  });
+  }, []);
+
+  const kpis = reportData?.kpis || {};
+  const statusCounts = kpis.statusCounts || {};
+
+  const totalOrders = kpis.totalOrders || 0;
+  const pendingOrders = (statusCounts.PENDING || 0) + (statusCounts.CONFIRMED || 0);
+  const processingOrders = (statusCounts.PROCESSING || 0) + (statusCounts.PICKING || 0) + (statusCounts.PACKED || 0);
+  const shippedOrders = statusCounts.SHIPPED || 0;
+  const deliveredOrders = statusCounts.DELIVERED || 0;
+  const cancelledOrders = statusCounts.CANCELLED || 0;
+
+  // Warehouse fulfillment volume from backend warehouseBreakdown
+  const warehouseVolume = (reportData?.warehouseBreakdown || []).map((wh) => ({
+    id: wh.warehouseId,
+    name: wh.warehouseName,
+    code: 'HUB',
+    totalOrders: wh.orderCount,
+    completedOrders: 0,
+    unitsDispatched: 0,
+    revenue: wh.revenue,
+  }));
 
   const whColumns = [
     {
@@ -180,6 +188,7 @@ export default function OrderReport() {
         <DataTable
           columns={whColumns}
           data={warehouseVolume}
+          loading={loading}
           keyExtractor={(w) => w.id}
           emptyTitle="No warehouse fulfillment records"
         />

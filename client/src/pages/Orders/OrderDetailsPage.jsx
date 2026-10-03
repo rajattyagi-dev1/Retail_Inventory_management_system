@@ -26,9 +26,44 @@ const TIMELINE_STAGES = [
 
 export default function OrderDetailsPage() {
   const { id } = useParams();
-  const { getOrderById, updateOrderStatus, cancelOrder } = useOrders();
+  const { getOrderById, updateOrderStatus, cancelOrder, loading: contextLoading } = useOrders();
 
-  const order = getOrderById(id);
+  const cachedOrder = getOrderById(id);
+  const [directOrder, setDirectOrder] = useState(null);
+  const [fetchingDirect, setFetchingDirect] = useState(false);
+
+  React.useEffect(() => {
+    let mounted = true;
+    if (!cachedOrder && id) {
+      setFetchingDirect(true);
+      import('../../services/orderService')
+        .then((m) => m.default.getOrderById(id))
+        .then((res) => {
+          if (mounted && res && res.data) {
+            setDirectOrder(res.data);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (mounted) setFetchingDirect(false);
+        });
+    }
+    return () => {
+      mounted = false;
+    };
+  }, [cachedOrder, id]);
+
+  const order = cachedOrder || directOrder;
+
+  if (contextLoading || fetchingDirect) {
+    return (
+      <div className="product-module-page">
+        <div style={{ padding: '60px 0', textAlign: 'center', color: '#64748b' }}>
+          Loading order details...
+        </div>
+      </div>
+    );
+  }
 
   if (!order) {
     return (
